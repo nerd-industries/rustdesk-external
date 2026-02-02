@@ -101,7 +101,7 @@ header "Configuring RustDesk"
 
 # Launch RustDesk first to let it initialize and create default config
 info "Launching RustDesk for initial setup..."
-open -a RustDesk
+open /Applications/RustDesk.app
 sleep 5
 
 # Close it so we can modify config
@@ -132,7 +132,7 @@ success "Configuration written"
 # Relaunch RustDesk
 header "Launching RustDesk"
 info "Starting RustDesk with new configuration..."
-open -a RustDesk
+open /Applications/RustDesk.app
 sleep 2
 
 success "RustDesk is now running!"

@@ -151,7 +151,7 @@ success "Quarantine removed"
 header "Initializing RustDesk"
 
 info "Launching RustDesk for initial setup..."
-sudo -u $SUDO_USER open -a RustDesk
+open /Applications/RustDesk.app
 sleep 5
 
 info "Closing RustDesk to apply configuration..."
@@ -191,7 +191,7 @@ success "Configuration written"
 header "Starting RustDesk"
 
 info "Launching RustDesk..."
-sudo -u $SUDO_USER open -a RustDesk
+open /Applications/RustDesk.app
 sleep 3
 
 # Set password using command line (already running as root)
