@@ -1,6 +1,7 @@
 #!/bin/bash
 # RustDesk macOS Uninstaller
 # Usage: curl -fsSL https://your-url/uninstall-macos.sh | bash
+# For shop installs: curl -fsSL https://your-url/uninstall-macos.sh | sudo bash
 
 set -e
 
@@ -32,6 +33,13 @@ header() {
 # Check if running on macOS
 if [[ "$(uname)" != "Darwin" ]]; then
     error "This script is for macOS only"
+fi
+
+# Get the user home directory (handle sudo case)
+if [[ -n "$SUDO_USER" ]]; then
+    USER_HOME=$(eval echo ~$SUDO_USER)
+else
+    USER_HOME="$HOME"
 fi
 
 header "RustDesk Uninstaller for macOS"
@@ -68,7 +76,7 @@ if [[ -n "$DEVICE_ID" ]]; then
     if echo "$response" | grep -q "success"; then
         success "Device removed from dashboard"
     else
-        warn "Could not remove from dashboard: $response"
+        warn "Could not remove from dashboard"
     fi
 else
     warn "No device ID found, skipping API unregistration"
@@ -86,18 +94,20 @@ fi
 # Remove config files
 info "Removing configuration files..."
 
-config_dirs=(
-    "$HOME/Library/Preferences/com.carriez.RustDesk"
-    "$HOME/Library/Application Support/com.carriez.RustDesk"
-    "$HOME/Library/Application Support/RustDesk"
-    "$HOME/Library/Caches/RustDesk"
-    "$HOME/Library/Logs/RustDesk"
+config_paths=(
+    "$USER_HOME/Library/Preferences/com.carriez.RustDesk"
+    "$USER_HOME/Library/Preferences/com.carriez/RustDesk"
+    "$USER_HOME/Library/Preferences/com.carriez"
+    "$USER_HOME/Library/Application Support/com.carriez.RustDesk"
+    "$USER_HOME/Library/Application Support/RustDesk"
+    "$USER_HOME/Library/Caches/RustDesk"
+    "$USER_HOME/Library/Logs/RustDesk"
 )
 
-for dir in "${config_dirs[@]}"; do
-    if [[ -e "$dir" ]]; then
-        rm -rf "$dir"
-        info "Removed: $dir"
+for path in "${config_paths[@]}"; do
+    if [[ -e "$path" ]]; then
+        rm -rf "$path"
+        info "Removed: $path"
     fi
 done
 
