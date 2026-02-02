@@ -150,7 +150,7 @@ success "Quarantine removed"
 # Configure RustDesk
 header "Configuring RustDesk"
 
-CONFIG_DIR="$USER_HOME/Library/Preferences/com.carriez.RustDesk"
+CONFIG_DIR="$USER_HOME/Library/Preferences/com.carriez/RustDesk"
 mkdir -p "$CONFIG_DIR"
 
 # Generate password

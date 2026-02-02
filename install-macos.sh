@@ -120,7 +120,7 @@ success "Quarantine removed"
 # Configure RustDesk
 header "Configuring RustDesk"
 
-CONFIG_DIR="$HOME/Library/Preferences/com.carriez.RustDesk"
+CONFIG_DIR="$HOME/Library/Preferences/com.carriez/RustDesk"
 mkdir -p "$CONFIG_DIR"
 
 # Write RustDesk config
