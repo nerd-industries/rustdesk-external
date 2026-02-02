@@ -36,10 +36,16 @@ curl -fsSL https://rustdesk-macos.nerdyneighbor.net | bash
 curl -fsSL https://rustdesk-macos-shop.nerdyneighbor.net | sudo bash
 ```
 
-### Uninstall
+### Uninstall (Customer)
 
 ```bash
 curl -fsSL https://rustdesk-macos-uninstall.nerdyneighbor.net | bash
+```
+
+### Uninstall (Shop)
+
+```bash
+curl -fsSL https://rustdesk-macos-uninstall.nerdyneighbor.net | sudo bash
 ```
 
 ## What Gets Installed
