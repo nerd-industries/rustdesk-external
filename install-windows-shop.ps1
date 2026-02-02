@@ -158,7 +158,16 @@ function Set-RustDeskPassword {
     param([string]$RustDeskPath, [string]$Password)
 
     Write-Status "Setting permanent password..."
-    & $RustDeskPath --permanent-password $Password
+    
+    # Ensure RustDesk service is running (required for IPC)
+    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($service -and $service.Status -ne "Running") {
+        Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+    }
+    
+    # Set the password via IPC
+    & $RustDeskPath --password $Password
     Start-Sleep -Seconds 2
 }
 
