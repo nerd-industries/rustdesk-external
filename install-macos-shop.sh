@@ -184,6 +184,9 @@ EOF
 
 success "Configuration written"
 
+# Fix ownership so RustDesk can read the config
+chown -R $SUDO_USER:$(id -gn $SUDO_USER) "$USER_HOME/Library/Preferences/com.carriez"
+
 # Start RustDesk
 header "Starting RustDesk"
 
