@@ -182,7 +182,7 @@ sleep 3
 
 # Set password using command line (already running as root)
 info "Setting permanent password..."
-/Applications/RustDesk.app/Contents/MacOS/RustDesk --password "$PASSWORD" 2>/dev/null || warn "Could not set password via CLI - set it manually in RustDesk"
+/Applications/RustDesk.app/Contents/MacOS/RustDesk --permanent-password "$PASSWORD" 2>/dev/null || warn "Could not set password via CLI - set it manually in RustDesk"
 sleep 2
 
 # Get RustDesk ID
