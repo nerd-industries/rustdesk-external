@@ -110,7 +110,7 @@ osascript -e 'quit app "RustDesk"' 2>/dev/null || pkill -x RustDesk 2>/dev/null 
 sleep 2
 
 # Now write our config (after RustDesk created its defaults)
-CONFIG_DIR="$HOME/Library/Preferences/com.carriez/RustDesk"
+CONFIG_DIR="$HOME/Library/Preferences/com.carriez.RustDesk"
 mkdir -p "$CONFIG_DIR"
 
 info "Writing server configuration..."
