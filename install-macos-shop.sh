@@ -147,27 +147,27 @@ info "Removing quarantine attribute..."
 xattr -rd com.apple.quarantine /Applications/RustDesk.app 2>/dev/null || true
 success "Quarantine removed"
 
-# Configure RustDesk
+# Start RustDesk first to let it create its config directory
+header "Initializing RustDesk"
 
-# First launch RustDesk to let it initialize
 info "Launching RustDesk for initial setup..."
-open -a RustDesk
+sudo -u $SUDO_USER open -a RustDesk
 sleep 5
 
-# Close it so we can modify config
 info "Closing RustDesk to apply configuration..."
 osascript -e 'quit app "RustDesk"' 2>/dev/null || pkill -x RustDesk 2>/dev/null || true
 sleep 2
 
+# Configure RustDesk
 header "Configuring RustDesk"
 
-CONFIG_DIR="$USER_HOME/Library/Preferences/com.carriez/RustDesk"
+CONFIG_DIR="$USER_HOME/Library/Preferences/com.carriez.RustDesk"
 mkdir -p "$CONFIG_DIR"
 
 # Generate password
 PASSWORD=$(generate_password)
 
-# Write RustDesk config
+# Write RustDesk config (overwriting defaults)
 info "Writing server configuration..."
 cat > "$CONFIG_DIR/RustDesk2.toml" << EOF
 rendezvous_server = '${RELAY_SERVER}'
@@ -182,16 +182,16 @@ custom-rendezvous-server = '${RELAY_SERVER}'
 api-server = '${API_SERVER}'
 EOF
 
+# Fix ownership (script runs as root via sudo)
+chown -R $SUDO_USER:staff "$CONFIG_DIR"
+
 success "Configuration written"
 
-# Fix ownership so RustDesk can read the config
-chown -R $SUDO_USER:$(id -gn $SUDO_USER) "$USER_HOME/Library/Preferences/com.carriez"
-
-# Start RustDesk
+# Start RustDesk again
 header "Starting RustDesk"
 
 info "Launching RustDesk..."
-open -a RustDesk
+sudo -u $SUDO_USER open -a RustDesk
 sleep 3
 
 # Set password using command line (already running as root)
