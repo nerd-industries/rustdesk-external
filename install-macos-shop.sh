@@ -148,6 +148,17 @@ xattr -rd com.apple.quarantine /Applications/RustDesk.app 2>/dev/null || true
 success "Quarantine removed"
 
 # Configure RustDesk
+
+# First launch RustDesk to let it initialize
+info "Launching RustDesk for initial setup..."
+open -a RustDesk
+sleep 5
+
+# Close it so we can modify config
+info "Closing RustDesk to apply configuration..."
+osascript -e 'quit app "RustDesk"' 2>/dev/null || pkill -x RustDesk 2>/dev/null || true
+sleep 2
+
 header "Configuring RustDesk"
 
 CONFIG_DIR="$USER_HOME/Library/Preferences/com.carriez/RustDesk"
