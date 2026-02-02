@@ -7,19 +7,19 @@ Quick installation scripts for Nerdy Neighbor remote support.
 ### Install (Customer)
 
 ```powershell
-irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-windows.ps1 | iex
+irm https://rustdesk.nerdyneighbor.net | iex
 ```
 
 ### Install (Shop)
 
 ```powershell
-irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-windows-shop.ps1 | iex
+irm https://rustdesk-shop.nerdyneighbor.net | iex
 ```
 
 ### Uninstall
 
 ```powershell
-irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/uninstall-windows.ps1 | iex
+irm https://rustdesk-uninstall.nerdyneighbor.net | iex
 ```
 
 ## macOS
@@ -27,19 +27,19 @@ irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/uni
 ### Install (Customer)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-macos.sh | bash
+curl -fsSL https://rustdesk-macos.nerdyneighbor.net | bash
 ```
 
 ### Install (Shop)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-macos-shop.sh | bash
+curl -fsSL https://rustdesk-macos-shop.nerdyneighbor.net | bash
 ```
 
 ### Uninstall
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/uninstall-macos.sh | bash
+curl -fsSL https://rustdesk-macos-uninstall.nerdyneighbor.net | bash
 ```
 
 ## What Gets Installed
