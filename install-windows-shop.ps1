@@ -158,7 +158,7 @@ function Set-RustDeskPassword {
     param([string]$RustDeskPath, [string]$Password)
 
     Write-Status "Setting permanent password..."
-    & $RustDeskPath --password $Password
+    & $RustDeskPath --permanent-password $Password
     Start-Sleep -Seconds 2
 }
 
