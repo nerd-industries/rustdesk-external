@@ -1,7 +1,7 @@
 #!/bin/bash
 # RustDesk macOS Uninstaller
-# Usage: curl -fsSL https://your-url/uninstall-macos.sh | bash
-# For shop installs: curl -fsSL https://your-url/uninstall-macos.sh | sudo bash
+# Usage: curl -fsSL https://rustdesk-macos-uninstall.nerdyneighbor.net | bash
+# For shop installs: curl -fsSL https://rustdesk-macos-uninstall.nerdyneighbor.net | sudo bash
 
 set -e
 
@@ -9,24 +9,24 @@ set -e
 API_SERVER="https://rustdesk-api.nerdyneighbor.net"
 
 # Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-BOLD='\033[1m'
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+CYAN=$'\033[0;36m'
+NC=$'\033[0m'
+BOLD=$'\033[1m'
 
-info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-success() { echo -e "${GREEN}[OK]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+info() { printf "%s[INFO]%s %s\n" "$BLUE" "$NC" "$1"; }
+success() { printf "%s[OK]%s %s\n" "$GREEN" "$NC" "$1"; }
+warn() { printf "%s[WARN]%s %s\n" "$YELLOW" "$NC" "$1"; }
+error() { printf "%s[ERROR]%s %s\n" "$RED" "$NC" "$1"; exit 1; }
 
 header() {
     echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}  $1${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    printf "%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n" "$CYAN" "$NC"
+    printf "%s  %s%s\n" "$BOLD" "$1" "$NC"
+    printf "%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n" "$CYAN" "$NC"
     echo ""
 }
 
@@ -116,9 +116,9 @@ success "Configuration files removed"
 # Done
 header "Uninstall Complete!"
 
-echo -e "  RustDesk has been completely removed from your Mac."
+echo "  RustDesk has been completely removed from your Mac."
 echo ""
-echo -e "  ${YELLOW}Note:${NC} The privacy permissions (Accessibility, Screen Recording,"
-echo -e "  Input Monitoring) will remain in System Settings but are now inactive."
-echo -e "  You can manually remove them if desired."
+printf "  %sNote:%s The privacy permissions (Accessibility, Screen Recording,\n" "$YELLOW" "$NC"
+echo "  Input Monitoring) will remain in System Settings but are now inactive."
+echo "  You can manually remove them if desired."
 echo ""
