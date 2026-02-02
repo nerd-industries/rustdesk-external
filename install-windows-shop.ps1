@@ -393,6 +393,11 @@ try {
     Write-Host "Setup complete! Device is ready for remote access." -ForegroundColor Green
     Write-Host ""
 
+    # Refresh desktop to show new icons
+    Write-Status "Refreshing desktop icons..."
+    & ie4uinit.exe -show
+    Start-Sleep -Seconds 1
+
     # Launch RustDesk GUI
     Write-Status "Launching RustDesk..."
     Start-Process -FilePath $rustdeskPath
@@ -404,3 +409,4 @@ try {
     Write-Status "Error: $_" "Error"
     exit 1
 }
+

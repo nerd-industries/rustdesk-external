@@ -245,6 +245,11 @@ try {
     # Rename shortcuts to branded name
     Rename-Shortcuts
 
+    # Refresh desktop to show new icons
+    Write-Status "Refreshing desktop icons..."
+    & ie4uinit.exe -show
+    Start-Sleep -Seconds 1
+
     # Open RustDesk GUI
     Open-RustDesk -RustDeskPath $rustdeskPath
 
