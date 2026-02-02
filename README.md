@@ -2,55 +2,41 @@
 
 Quick installation scripts for Nerdy Neighbor remote support.
 
-## Windows Installation
+## Windows
 
-### Customer Computer
-
-Run in PowerShell as Administrator:
+### Install (Customer)
 
 ```powershell
-irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-customer.ps1 | iex
+irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-windows.ps1 | iex
 ```
 
-### Shop Computer (Permanent Password)
-
-Run in PowerShell as Administrator:
+### Install (Shop)
 
 ```powershell
-irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-shop.ps1 | iex
+irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-windows-shop.ps1 | iex
 ```
 
-## macOS Installation
+### Uninstall
 
-### Customer Computer
+```powershell
+irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/uninstall-windows.ps1 | iex
+```
 
-Run in Terminal:
+## macOS
+
+### Install (Customer)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-macos.sh | bash
 ```
 
-### Shop Computer (Permanent Password)
-
-Run in Terminal:
+### Install (Shop)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/install-macos-shop.sh | bash
 ```
 
-## Uninstallation
-
-### Windows
-
-Run in PowerShell as Administrator:
-
-```powershell
-irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/uninstall.ps1 | iex
-```
-
-### macOS
-
-Run in Terminal:
+### Uninstall
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/uninstall-macos.sh | bash
@@ -61,7 +47,3 @@ curl -fsSL https://raw.githubusercontent.com/nerd-industries/rustdesk-external/m
 - RustDesk remote desktop client (latest version)
 - Pre-configured connection to Nerdy Neighbor support servers
 - Desktop shortcut: "Nerdy Neighbor Support - RustDesk"
-
-## Support
-
-Contact Nerdy Neighbor for assistance.
