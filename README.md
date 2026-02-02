@@ -33,7 +33,7 @@ curl -fsSL https://rustdesk-macos.nerdyneighbor.net | bash
 ### Install (Shop)
 
 ```bash
-curl -fsSL https://rustdesk-macos-shop.nerdyneighbor.net | bash
+curl -fsSL https://rustdesk-macos-shop.nerdyneighbor.net | sudo bash
 ```
 
 ### Uninstall
