@@ -190,6 +190,30 @@ function Set-RunAsAdmin {
     Write-Status "Run as administrator compatibility setting applied" "Success"
 }
 
+function Register-Device {
+    param(
+        [string]$Password,
+        [string]$CustomerName
+    )
+
+    Write-Status "Registering device with API server..."
+
+    $hostname = $env:COMPUTERNAME
+    $body = @{
+        password = $Password
+        hostname = $hostname
+        customer_name = $CustomerName
+        install_type = "shop"
+    } | ConvertTo-Json
+
+    try {
+        $response = Invoke-RestMethod -Uri "$ApiServer/api/device/register" -Method Post -Body $body -ContentType "application/json"
+        Write-Status "Device registered successfully" "Success"
+    } catch {
+        Write-Status "Warning: Could not register device with API server: $_" "Warning"
+    }
+}
+
 function Rename-Shortcuts {
     Write-Status "Customizing shortcuts for Nerdy Neighbor Support..."
 
@@ -329,6 +353,9 @@ try {
         Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
     }
 
+    # Register with API server
+    Register-Device -Password $password -CustomerName $customerName
+
     # Display results
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Green
@@ -339,8 +366,7 @@ try {
     Write-Host "Hostname:  $env:COMPUTERNAME" -ForegroundColor Cyan
     Write-Host "Password:  $password" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "The device ID will be visible in the RustDesk window" -ForegroundColor Cyan
-    Write-Host "and will auto-register with the API server." -ForegroundColor Cyan
+    Write-Host "The device ID will be visible in the RustDesk window." -ForegroundColor Cyan
     Write-Host ""
 
     # Refresh desktop to show new icons
