@@ -115,12 +115,29 @@ custom-rendezvous-server = '$RelayServer'
 api-server = '$ApiServer'
 "@
 
-    # Write config to user profile only (no service config for customer installs)
+    # Write config to user profile
     $userConfigDir = Join-Path $env:APPDATA "RustDesk\config"
     if (-not (Test-Path $userConfigDir)) {
         New-Item -ItemType Directory -Path $userConfigDir -Force | Out-Null
     }
     $configContent | Out-File -FilePath (Join-Path $userConfigDir "RustDesk2.toml") -Encoding UTF8
+
+    # Write config to service profile (required for UAC prompt visibility)
+    $serviceConfigDir = "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config"
+    if (-not (Test-Path $serviceConfigDir)) {
+        New-Item -ItemType Directory -Path $serviceConfigDir -Force | Out-Null
+    }
+    $configContent | Out-File -FilePath (Join-Path $serviceConfigDir "RustDesk2.toml") -Encoding UTF8
+
+    # Ensure RustDesk service is set to auto-start
+    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($service) {
+        Set-Service -Name "RustDesk" -StartupType Automatic
+        if ($service.Status -ne 'Running') {
+            Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+        }
+        Write-Status "RustDesk service configured for auto-start" "Success"
+    }
 
     Write-Status "Configuration applied" "Success"
 }
