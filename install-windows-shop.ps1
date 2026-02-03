@@ -206,7 +206,7 @@ function Get-RustDeskId {
             $output = & $RustDeskPath --get-id 2>&1 | Out-String
             $output = $output.Trim()
 
-            if ($output -match '(\d{9,})') {
+            if ($output -match '(\d{7,})') {
                 $id = $matches[1]
                 Write-Status "Got ID: $id" "Success"
             }
