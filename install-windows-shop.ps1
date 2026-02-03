@@ -2,15 +2,14 @@
 <#
 .SYNOPSIS
     RustDesk Shop Installation Script
-    For technician machines - silent install with permanent password and auto-registration
+    For technician machines - silent install with permanent password
 
 .DESCRIPTION
     This script:
     - Downloads and installs the latest RustDesk
     - Configures it to connect to your self-hosted servers
     - Sets a permanent password for unattended access
-    - Registers the device with your API server
-    - Prompts for customer name and saves to API
+    - The API server will see the device when it connects
 
 .NOTES
     Run with: irm <your-url>/install-shop.ps1 | iex
@@ -158,120 +157,19 @@ function Set-RustDeskPassword {
     param([string]$RustDeskPath, [string]$Password)
 
     Write-Status "Setting permanent password..."
-    
+
     # Ensure RustDesk service is running (required for IPC)
     $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
     if ($service -and $service.Status -ne "Running") {
         Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 3
     }
-    
-    # Set the password via IPC
+
+    # Set the password via command line
     & $RustDeskPath --password $Password
     Start-Sleep -Seconds 2
-}
 
-function Get-RustDeskId {
-    param([string]$RustDeskPath)
-
-    Write-Status "Retrieving RustDesk ID..."
-
-    # The RustDesk --get-id command works via IPC, which requires:
-    # 1. The RustDesk Windows Service to be running
-    # 2. The service spawns a "--server" process that listens on IPC
-    # 3. --get-id connects to the IPC server to get the ID
-
-    # Step 1: Ensure RustDesk service is running
-    Write-Status "Starting RustDesk service..."
-    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-    if ($service) {
-        if ($service.Status -ne "Running") {
-            Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-        }
-    } else {
-        Write-Status "RustDesk service not found, starting GUI instead..." "Warning"
-    }
-
-    # Step 2: Wait for the --server process to be running (spawned by service)
-    # The service launches "rustdesk.exe --server" which hosts the IPC listener
-    Write-Status "Waiting for RustDesk server process..."
-    $serverWait = 0
-    $maxServerWait = 30
-    while ($serverWait -lt $maxServerWait) {
-        $serverProcess = Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -like "*--server*" }
-        if ($serverProcess) {
-            Write-Status "RustDesk server process detected" "Success"
-            break
-        }
-        Start-Sleep -Seconds 2
-        $serverWait += 2
-        Write-Status "Waiting for server process ($serverWait/$maxServerWait sec)..." "Info"
-    }
-
-    # Step 3: Give IPC listener time to initialize
-    Write-Status "Waiting for IPC initialization..."
-    Start-Sleep -Seconds 5
-
-    # Step 4: Try to get the ID via --get-id (uses IPC)
-    $maxAttempts = 20
-    $attempt = 0
-    $id = $null
-
-    while ($attempt -lt $maxAttempts -and -not $id) {
-        $attempt++
-
-        # Try --get-id command (connects to IPC server)
-        try {
-            Write-Status "Attempting --get-id (attempt $attempt/$maxAttempts)..." "Info"
-            $output = & $RustDeskPath --get-id 2>&1 | Out-String
-            $output = $output.Trim()
-            Write-Status "Raw output: '$output'" "Info"
-
-            # The ID should be a 9+ digit number
-            if ($output -match '^(\d{9,})$') {
-                $id = $matches[1]
-                Write-Status "Got ID via --get-id: $id" "Success"
-            } elseif ($output -match '(\d{9,})') {
-                # ID found somewhere in output
-                $id = $matches[1]
-                Write-Status "Got ID from output: $id" "Success"
-            }
-        } catch {
-            Write-Status "--get-id command failed: $_" "Warning"
-        }
-
-        if (-not $id) {
-            Start-Sleep -Seconds 2
-        }
-    }
-
-    if (-not $id) {
-        Write-Status "Failed to retrieve RustDesk ID after $maxAttempts attempts" "Error"
-        Write-Status "Troubleshooting info:" "Info"
-
-        # Check if service is running
-        $svc = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-        if ($svc) {
-            Write-Host "  Service status: $($svc.Status)"
-        } else {
-            Write-Host "  Service: NOT FOUND"
-        }
-
-        # Check for rustdesk processes
-        $procs = Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue
-        Write-Host "  RustDesk processes: $($procs.Count)"
-
-        # Check for --server process
-        $serverProc = Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -like "*--server*" }
-        Write-Host "  Server process running: $(if ($serverProc) { 'YES' } else { 'NO' })"
-
-        throw "Failed to retrieve RustDesk ID - IPC connection failed"
-    }
-
-    return $id
+    Write-Status "Password set" "Success"
 }
 
 function Set-RunAsAdmin {
@@ -290,32 +188,6 @@ function Set-RunAsAdmin {
     Set-ItemProperty -Path $regPath -Name $ExePath -Value "~ RUNASADMIN" -Type String
 
     Write-Status "Run as administrator compatibility setting applied" "Success"
-}
-
-function Register-Device {
-    param(
-        [string]$DeviceId,
-        [string]$Password,
-        [string]$CustomerName
-    )
-
-    Write-Status "Registering device with API server..."
-
-    $hostname = $env:COMPUTERNAME
-    $body = @{
-        device_id = $DeviceId
-        password = $Password
-        hostname = $hostname
-        customer_name = $CustomerName
-        install_type = "shop"
-    } | ConvertTo-Json
-
-    try {
-        $response = Invoke-RestMethod -Uri "$ApiServer/api/device/register" -Method Post -Body $body -ContentType "application/json"
-        Write-Status "Device registered successfully" "Success"
-    } catch {
-        Write-Status "Warning: Could not register device with API server: $_" "Warning"
-    }
 }
 
 function Rename-Shortcuts {
@@ -428,8 +300,11 @@ try {
     # Install RustDesk
     $rustdeskPath = Install-RustDesk -InstallerPath $installerPath
 
-    # Get device ID first (this starts RustDesk and lets it do first-run initialization)
-    $deviceId = Get-RustDeskId -RustDeskPath $rustdeskPath
+    # Let RustDesk do first-run initialization (generates ID)
+    Write-Status "Initializing RustDesk (generating ID)..."
+    Start-Process -FilePath $rustdeskPath -WindowStyle Hidden
+    Start-Sleep -Seconds 5
+    Stop-RustDesk
 
     # Now apply our config AFTER first-run (so it doesn't get overwritten)
     Set-RustDeskConfig -RustDeskPath $rustdeskPath
@@ -448,6 +323,12 @@ try {
     Stop-RustDesk
     Start-Sleep -Seconds 2
 
+    # Start the service so it connects to the API server
+    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($service) {
+        Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    }
+
     # Display results
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Green
@@ -455,15 +336,11 @@ try {
     Write-Host "========================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "Customer:  $customerName" -ForegroundColor Cyan
-    Write-Host "Device ID: $deviceId" -ForegroundColor Yellow
+    Write-Host "Hostname:  $env:COMPUTERNAME" -ForegroundColor Cyan
     Write-Host "Password:  $password" -ForegroundColor Yellow
     Write-Host ""
-
-    # Register with API
-    Register-Device -DeviceId $deviceId -Password $password -CustomerName $customerName
-
-    Write-Host ""
-    Write-Host "Setup complete! Device is ready for remote access." -ForegroundColor Green
+    Write-Host "The device ID will be visible in the RustDesk window" -ForegroundColor Cyan
+    Write-Host "and will auto-register with the API server." -ForegroundColor Cyan
     Write-Host ""
 
     # Refresh desktop to show new icons
@@ -471,9 +348,14 @@ try {
     & ie4uinit.exe -show
     Start-Sleep -Seconds 1
 
-    # Launch RustDesk GUI
+    # Launch RustDesk GUI so technician can see the ID
     Write-Status "Launching RustDesk..."
     Start-Process -FilePath $rustdeskPath
+
+    Write-Host ""
+    Write-Host "Setup complete! Device is ready for remote access." -ForegroundColor Green
+    Write-Host "Note the Device ID shown in the RustDesk window." -ForegroundColor Yellow
+    Write-Host ""
 
     # Cleanup
     Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
@@ -482,4 +364,3 @@ try {
     Write-Status "Error: $_" "Error"
     exit 1
 }
-
