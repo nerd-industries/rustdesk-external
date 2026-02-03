@@ -129,15 +129,30 @@ api-server = '$ApiServer'
     }
     $configContent | Out-File -FilePath (Join-Path $serviceConfigDir "RustDesk2.toml") -Encoding UTF8
 
-    # Ensure RustDesk service is set to auto-start
+    # Set service to Manual (not auto-start) - customer can launch RustDesk when needed
     $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
     if ($service) {
-        Set-Service -Name "RustDesk" -StartupType Automatic
+        Set-Service -Name "RustDesk" -StartupType Manual
+        # Start it now for the current session
         if ($service.Status -ne 'Running') {
             Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
         }
-        Write-Status "RustDesk service configured for auto-start" "Success"
+        Write-Status "RustDesk service set to manual start" "Success"
     }
+
+    # Disable RustDesk from startup apps (Task Manager)
+    $startupPaths = @(
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"
+    )
+    foreach ($regPath in $startupPaths) {
+        if (Test-Path $regPath) {
+            Remove-ItemProperty -Path $regPath -Name "RustDesk" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $regPath -Name "RustDesk Tray" -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Status "Disabled RustDesk auto-start" "Success"
 
     Write-Status "Configuration applied" "Success"
 }
