@@ -176,38 +176,66 @@ function Get-RustDeskId {
 
     Write-Status "Retrieving RustDesk ID..."
 
-    # Start RustDesk to generate ID
-    Start-Process -FilePath $RustDeskPath -WindowStyle Hidden
-    Start-Sleep -Seconds 5
+    # Ensure RustDesk service is running first (needed for ID generation)
+    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($service) {
+        if ($service.Status -ne "Running") {
+            Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+        }
+    }
 
-    $maxAttempts = 10
+    # Start RustDesk GUI to trigger ID generation
+    Start-Process -FilePath $RustDeskPath -WindowStyle Hidden
+    Start-Sleep -Seconds 8
+
+    $maxAttempts = 15
     $attempt = 0
     $id = $null
+
+    # Define all possible config paths
+    $configPaths = @(
+        (Join-Path $env:APPDATA "RustDesk\config\RustDesk.toml"),
+        "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml",
+        (Join-Path $env:ProgramData "RustDesk\config\RustDesk.toml"),
+        "C:\ProgramData\RustDesk\config\RustDesk.toml"
+    )
 
     while ($attempt -lt $maxAttempts -and -not $id) {
         $attempt++
 
-        # Try --get-id command
-        $output = & $RustDeskPath --get-id 2>&1 | Out-String
-
-        # Extract any 9+ digit number from output
-        if ($output -match '(\d{9,})') {
-            $id = $matches[1]
+        # Try --get-id command first
+        try {
+            $output = & $RustDeskPath --get-id 2>&1 | Out-String
+            if ($output -match '(\d{9,})') {
+                $id = $matches[1]
+                Write-Status "Got ID via --get-id command" "Success"
+            }
+        } catch {
+            # Command failed, continue to config file method
         }
 
-        # Also try reading from config file
+        # Try reading from config files
         if (-not $id) {
-            $configPath = Join-Path $env:APPDATA "RustDesk\config\RustDesk.toml"
-            if (Test-Path $configPath) {
-                $config = Get-Content $configPath -Raw
-                if ($config -match 'id\s*=\s*[''"]?(\d{9,})[''"]?') {
-                    $id = $matches[1]
+            foreach ($configPath in $configPaths) {
+                if (Test-Path $configPath) {
+                    Write-Status "Checking config: $configPath" "Info"
+                    try {
+                        $config = Get-Content $configPath -Raw -ErrorAction SilentlyContinue
+                        if ($config -match 'id\s*=\s*[''"]?(\d{9,})[''"]?') {
+                            $id = $matches[1]
+                            Write-Status "Got ID from config file" "Success"
+                            break
+                        }
+                    } catch {
+                        # Config file not readable, try next
+                    }
                 }
             }
         }
 
         if (-not $id) {
-            Write-Status "Waiting for ID (attempt $attempt/$maxAttempts)..." "Warning"
+            Write-Status "Waiting for ID generation (attempt $attempt/$maxAttempts)..." "Warning"
             Start-Sleep -Seconds 3
         }
     }
@@ -216,10 +244,33 @@ function Get-RustDeskId {
     Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
     if (-not $id) {
-        throw "Failed to retrieve RustDesk ID"
+        Write-Status "Could not retrieve ID automatically. Checked paths:" "Error"
+        foreach ($configPath in $configPaths) {
+            $exists = if (Test-Path $configPath) { "EXISTS" } else { "NOT FOUND" }
+            Write-Host "  $configPath - $exists"
+        }
+        throw "Failed to retrieve RustDesk ID after $maxAttempts attempts"
     }
 
     return $id
+}
+
+function Set-RunAsAdmin {
+    param([string]$ExePath)
+
+    Write-Status "Setting RustDesk to always run as administrator..."
+
+    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
+
+    # Create the registry key if it doesn't exist
+    if (-not (Test-Path $regPath)) {
+        New-Item -Path $regPath -Force | Out-Null
+    }
+
+    # Set the RUNASADMIN flag for RustDesk
+    Set-ItemProperty -Path $regPath -Name $ExePath -Value "~ RUNASADMIN" -Type String
+
+    Write-Status "Run as administrator compatibility setting applied" "Success"
 }
 
 function Register-Device {
@@ -366,6 +417,9 @@ try {
 
     # Rename shortcuts to branded name
     Rename-Shortcuts
+
+    # Set RustDesk to always run as administrator
+    Set-RunAsAdmin -ExePath $rustdeskPath
 
     # Generate and set password
     $password = Get-RandomPassword -Length 16

@@ -132,6 +132,24 @@ function Open-RustDesk {
     Start-Process -FilePath $RustDeskPath
 }
 
+function Set-RunAsAdmin {
+    param([string]$ExePath)
+
+    Write-Status "Setting RustDesk to always run as administrator..."
+
+    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
+
+    # Create the registry key if it doesn't exist
+    if (-not (Test-Path $regPath)) {
+        New-Item -Path $regPath -Force | Out-Null
+    }
+
+    # Set the RUNASADMIN flag for RustDesk
+    Set-ItemProperty -Path $regPath -Name $ExePath -Value "~ RUNASADMIN" -Type String
+
+    Write-Status "Run as administrator compatibility setting applied" "Success"
+}
+
 function Rename-Shortcuts {
     Write-Status "Customizing shortcuts for Nerdy Neighbor Support..."
 
@@ -244,6 +262,9 @@ try {
 
     # Rename shortcuts to branded name
     Rename-Shortcuts
+
+    # Set RustDesk to always run as administrator
+    Set-RunAsAdmin -ExePath $rustdeskPath
 
     # Refresh desktop to show new icons
     Write-Status "Refreshing desktop icons..."
