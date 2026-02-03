@@ -176,80 +176,99 @@ function Get-RustDeskId {
 
     Write-Status "Retrieving RustDesk ID..."
 
-    # Ensure RustDesk service is running first (needed for ID generation)
+    # The RustDesk --get-id command works via IPC, which requires:
+    # 1. The RustDesk Windows Service to be running
+    # 2. The service spawns a "--server" process that listens on IPC
+    # 3. --get-id connects to the IPC server to get the ID
+
+    # Step 1: Ensure RustDesk service is running
+    Write-Status "Starting RustDesk service..."
     $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
     if ($service) {
         if ($service.Status -ne "Running") {
             Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 3
+            Start-Sleep -Seconds 2
         }
+    } else {
+        Write-Status "RustDesk service not found, starting GUI instead..." "Warning"
     }
 
-    # Start RustDesk GUI to trigger ID generation
-    Start-Process -FilePath $RustDeskPath -WindowStyle Hidden
-    Start-Sleep -Seconds 8
+    # Step 2: Wait for the --server process to be running (spawned by service)
+    # The service launches "rustdesk.exe --server" which hosts the IPC listener
+    Write-Status "Waiting for RustDesk server process..."
+    $serverWait = 0
+    $maxServerWait = 30
+    while ($serverWait -lt $maxServerWait) {
+        $serverProcess = Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like "*--server*" }
+        if ($serverProcess) {
+            Write-Status "RustDesk server process detected" "Success"
+            break
+        }
+        Start-Sleep -Seconds 2
+        $serverWait += 2
+        Write-Status "Waiting for server process ($serverWait/$maxServerWait sec)..." "Info"
+    }
 
-    $maxAttempts = 15
+    # Step 3: Give IPC listener time to initialize
+    Write-Status "Waiting for IPC initialization..."
+    Start-Sleep -Seconds 5
+
+    # Step 4: Try to get the ID via --get-id (uses IPC)
+    $maxAttempts = 20
     $attempt = 0
     $id = $null
-
-    # Define all possible config paths
-    $configPaths = @(
-        (Join-Path $env:APPDATA "RustDesk\config\RustDesk.toml"),
-        "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml",
-        (Join-Path $env:ProgramData "RustDesk\config\RustDesk.toml"),
-        "C:\ProgramData\RustDesk\config\RustDesk.toml"
-    )
 
     while ($attempt -lt $maxAttempts -and -not $id) {
         $attempt++
 
-        # Try --get-id command first
+        # Try --get-id command (connects to IPC server)
         try {
+            Write-Status "Attempting --get-id (attempt $attempt/$maxAttempts)..." "Info"
             $output = & $RustDeskPath --get-id 2>&1 | Out-String
-            if ($output -match '(\d{9,})') {
+            $output = $output.Trim()
+            Write-Status "Raw output: '$output'" "Info"
+
+            # The ID should be a 9+ digit number
+            if ($output -match '^(\d{9,})$') {
                 $id = $matches[1]
-                Write-Status "Got ID via --get-id command" "Success"
+                Write-Status "Got ID via --get-id: $id" "Success"
+            } elseif ($output -match '(\d{9,})') {
+                # ID found somewhere in output
+                $id = $matches[1]
+                Write-Status "Got ID from output: $id" "Success"
             }
         } catch {
-            # Command failed, continue to config file method
-        }
-
-        # Try reading from config files
-        if (-not $id) {
-            foreach ($configPath in $configPaths) {
-                if (Test-Path $configPath) {
-                    Write-Status "Checking config: $configPath" "Info"
-                    try {
-                        $config = Get-Content $configPath -Raw -ErrorAction SilentlyContinue
-                        if ($config -match 'id\s*=\s*[''"]?(\d{9,})[''"]?') {
-                            $id = $matches[1]
-                            Write-Status "Got ID from config file" "Success"
-                            break
-                        }
-                    } catch {
-                        # Config file not readable, try next
-                    }
-                }
-            }
+            Write-Status "--get-id command failed: $_" "Warning"
         }
 
         if (-not $id) {
-            Write-Status "Waiting for ID generation (attempt $attempt/$maxAttempts)..." "Warning"
-            Start-Sleep -Seconds 3
+            Start-Sleep -Seconds 2
         }
     }
 
-    # Stop RustDesk GUI if running
-    Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
     if (-not $id) {
-        Write-Status "Could not retrieve ID automatically. Checked paths:" "Error"
-        foreach ($configPath in $configPaths) {
-            $exists = if (Test-Path $configPath) { "EXISTS" } else { "NOT FOUND" }
-            Write-Host "  $configPath - $exists"
+        Write-Status "Failed to retrieve RustDesk ID after $maxAttempts attempts" "Error"
+        Write-Status "Troubleshooting info:" "Info"
+
+        # Check if service is running
+        $svc = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+        if ($svc) {
+            Write-Host "  Service status: $($svc.Status)"
+        } else {
+            Write-Host "  Service: NOT FOUND"
         }
-        throw "Failed to retrieve RustDesk ID after $maxAttempts attempts"
+
+        # Check for rustdesk processes
+        $procs = Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue
+        Write-Host "  RustDesk processes: $($procs.Count)"
+
+        # Check for --server process
+        $serverProc = Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like "*--server*" }
+        Write-Host "  Server process running: $(if ($serverProc) { 'YES' } else { 'NO' })"
+
+        throw "Failed to retrieve RustDesk ID - IPC connection failed"
     }
 
     return $id
