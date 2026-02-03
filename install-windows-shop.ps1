@@ -190,8 +190,46 @@ function Set-RunAsAdmin {
     Write-Status "Run as administrator compatibility setting applied" "Success"
 }
 
+function Get-RustDeskId {
+    param([string]$RustDeskPath)
+
+    Write-Status "Retrieving RustDesk ID..."
+
+    $maxAttempts = 10
+    $attempt = 0
+    $id = $null
+
+    while ($attempt -lt $maxAttempts -and -not $id) {
+        $attempt++
+
+        try {
+            $output = & $RustDeskPath --get-id 2>&1 | Out-String
+            $output = $output.Trim()
+
+            if ($output -match '(\d{9,})') {
+                $id = $matches[1]
+                Write-Status "Got ID: $id" "Success"
+            }
+        } catch {
+            # Command failed, will retry
+        }
+
+        if (-not $id) {
+            Write-Status "Waiting for ID (attempt $attempt/$maxAttempts)..." "Warning"
+            Start-Sleep -Seconds 3
+        }
+    }
+
+    if (-not $id) {
+        throw "Failed to retrieve RustDesk ID after $maxAttempts attempts"
+    }
+
+    return $id
+}
+
 function Register-Device {
     param(
+        [string]$DeviceId,
         [string]$Password,
         [string]$CustomerName
     )
@@ -200,6 +238,7 @@ function Register-Device {
 
     $hostname = $env:COMPUTERNAME
     $body = @{
+        device_id = $DeviceId
         password = $Password
         hostname = $hostname
         customer_name = $CustomerName
@@ -207,21 +246,12 @@ function Register-Device {
     } | ConvertTo-Json
 
     Write-Status "Sending to: $ApiServer/api/device/register" "Info"
-    Write-Status "Payload: $body" "Info"
 
     try {
         $response = Invoke-RestMethod -Uri "$ApiServer/api/device/register" -Method Post -Body $body -ContentType "application/json"
         Write-Status "Device registered successfully" "Success"
-        if ($response) {
-            Write-Status "Response: $($response | ConvertTo-Json -Compress)" "Info"
-        }
     } catch {
-        Write-Status "API Error: $($_.Exception.Message)" "Error"
-        if ($_.Exception.Response) {
-            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-            $responseBody = $reader.ReadToEnd()
-            Write-Status "Response body: $responseBody" "Error"
-        }
+        Write-Status "API Error: $($_.Exception.Message)" "Warning"
     }
 }
 
@@ -337,8 +367,13 @@ try {
 
     # Let RustDesk do first-run initialization (generates ID)
     Write-Status "Initializing RustDesk (generating ID)..."
-    Start-Process -FilePath $rustdeskPath -WindowStyle Hidden
+    Start-Process -FilePath $rustdeskPath
     Start-Sleep -Seconds 5
+
+    # Get device ID while RustDesk is running
+    $deviceId = Get-RustDeskId -RustDeskPath $rustdeskPath
+
+    # Stop RustDesk to apply config
     Stop-RustDesk
 
     # Now apply our config AFTER first-run (so it doesn't get overwritten)
@@ -365,7 +400,7 @@ try {
     }
 
     # Register with API server
-    Register-Device -Password $password -CustomerName $customerName
+    Register-Device -DeviceId $deviceId -Password $password -CustomerName $customerName
 
     # Display results
     Write-Host ""
@@ -374,10 +409,8 @@ try {
     Write-Host "========================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "Customer:  $customerName" -ForegroundColor Cyan
-    Write-Host "Hostname:  $env:COMPUTERNAME" -ForegroundColor Cyan
+    Write-Host "Device ID: $deviceId" -ForegroundColor Yellow
     Write-Host "Password:  $password" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "The device ID will be visible in the RustDesk window." -ForegroundColor Cyan
     Write-Host ""
 
     # Refresh desktop to show new icons
