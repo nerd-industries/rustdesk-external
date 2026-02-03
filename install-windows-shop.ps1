@@ -206,11 +206,22 @@ function Register-Device {
         install_type = "shop"
     } | ConvertTo-Json
 
+    Write-Status "Sending to: $ApiServer/api/device/register" "Info"
+    Write-Status "Payload: $body" "Info"
+
     try {
         $response = Invoke-RestMethod -Uri "$ApiServer/api/device/register" -Method Post -Body $body -ContentType "application/json"
         Write-Status "Device registered successfully" "Success"
+        if ($response) {
+            Write-Status "Response: $($response | ConvertTo-Json -Compress)" "Info"
+        }
     } catch {
-        Write-Status "Warning: Could not register device with API server: $_" "Warning"
+        Write-Status "API Error: $($_.Exception.Message)" "Error"
+        if ($_.Exception.Response) {
+            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+            $responseBody = $reader.ReadToEnd()
+            Write-Status "Response body: $responseBody" "Error"
+        }
     }
 }
 
