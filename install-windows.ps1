@@ -12,7 +12,7 @@
     - Does NOT set a permanent password (uses one-time passwords only)
 
 .NOTES
-    Run with: irm <your-url>/install-customer.ps1 | iex
+    Run with: irm https://rustdesk-windows.nerdyneighbor.net | iex
 #>
 
 # =============================================================================
@@ -48,9 +48,7 @@ function Get-LatestRustDeskVersion {
 function Get-RustDeskInstaller {
     param([string]$Version)
 
-    # Remove 'v' prefix if present for filename
     $versionClean = $Version -replace '^v', ''
-
     $installerName = "rustdesk-$versionClean-x86_64.exe"
     $downloadUrl = "https://github.com/rustdesk/rustdesk/releases/download/$Version/$installerName"
     $tempPath = Join-Path $env:TEMP $installerName
@@ -75,7 +73,6 @@ function Install-RustDesk {
     Write-Status "Installing RustDesk silently..."
     Start-Process -FilePath $InstallerPath -ArgumentList "--silent-install"
 
-    # Wait for installation to complete (don't use -Wait as it can hang)
     $rustdeskPath = "C:\Program Files\RustDesk\rustdesk.exe"
     $maxWait = 120
     $waited = 0
@@ -90,16 +87,12 @@ function Install-RustDesk {
         throw "RustDesk installation failed - executable not found after ${maxWait}s"
     }
 
-    # Give it a few more seconds to finish writing files
     Start-Sleep -Seconds 5
-
     Write-Status "RustDesk installed successfully" "Success"
     return $rustdeskPath
 }
 
 function Set-RustDeskConfig {
-    param([string]$RustDeskPath)
-
     Write-Status "Configuring RustDesk..."
 
     $configContent = @"
@@ -129,39 +122,44 @@ api-server = '$ApiServer'
     }
     $configContent | Out-File -FilePath (Join-Path $serviceConfigDir "RustDesk2.toml") -Encoding UTF8
 
-    # Set service to Manual (not auto-start) - customer can launch RustDesk when needed
-    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-    if ($service) {
-        Set-Service -Name "RustDesk" -StartupType Manual
-        # Start it now for the current session
-        if ($service.Status -ne 'Running') {
-            Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-        }
-        Write-Status "RustDesk service set to manual start" "Success"
-    }
-
-    # Disable RustDesk from startup apps (Task Manager)
-    $startupPaths = @(
-        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"
-    )
-    foreach ($regPath in $startupPaths) {
-        if (Test-Path $regPath) {
-            Remove-ItemProperty -Path $regPath -Name "RustDesk" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $regPath -Name "RustDesk Tray" -ErrorAction SilentlyContinue
-        }
-    }
-    Write-Status "Disabled RustDesk auto-start" "Success"
-
     Write-Status "Configuration applied" "Success"
 }
 
-function Open-RustDesk {
+function Get-RustDeskId {
     param([string]$RustDeskPath)
 
-    Write-Status "Opening RustDesk..."
-    Start-Process -FilePath $RustDeskPath
+    Write-Status "Retrieving RustDesk ID..."
+
+    $maxAttempts = 10
+    $attempt = 0
+    $id = $null
+
+    while ($attempt -lt $maxAttempts -and -not $id) {
+        $attempt++
+
+        try {
+            $output = & $RustDeskPath --get-id 2>&1 | Out-String
+            $output = $output.Trim()
+
+            if ($output -match '(\d{7,})') {
+                $id = $matches[1]
+                Write-Status "Got ID: $id" "Success"
+            }
+        } catch {
+            # Command failed, will retry
+        }
+
+        if (-not $id) {
+            Write-Status "Waiting for ID (attempt $attempt/$maxAttempts)..." "Warning"
+            Start-Sleep -Seconds 3
+        }
+    }
+
+    if (-not $id) {
+        throw "Failed to retrieve RustDesk ID after $maxAttempts attempts"
+    }
+
+    return $id
 }
 
 function Set-RunAsAdmin {
@@ -171,14 +169,11 @@ function Set-RunAsAdmin {
 
     $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
 
-    # Create the registry key if it doesn't exist
     if (-not (Test-Path $regPath)) {
         New-Item -Path $regPath -Force | Out-Null
     }
 
-    # Set the RUNASADMIN flag for RustDesk
     Set-ItemProperty -Path $regPath -Name $ExePath -Value "~ RUNASADMIN" -Type String
-
     Write-Status "Run as administrator compatibility setting applied" "Success"
 }
 
@@ -212,7 +207,6 @@ function Rename-Shortcuts {
         $oldShortcut = Join-Path $desktop "RustDesk.lnk"
         $newShortcut = Join-Path $desktop "$newName.lnk"
         if (Test-Path $oldShortcut) {
-            # Update icon and rename
             $lnk = $shell.CreateShortcut($oldShortcut)
             if ($iconPath) { $lnk.IconLocation = "$iconPath,0" }
             $lnk.Save()
@@ -228,23 +222,19 @@ function Rename-Shortcuts {
     )
 
     foreach ($startMenu in $startMenuPaths) {
-        # Check for RustDesk folder
         $rustdeskFolder = Join-Path $startMenu "RustDesk"
         if (Test-Path $rustdeskFolder) {
             $oldShortcut = Join-Path $rustdeskFolder "RustDesk.lnk"
             $newShortcut = Join-Path $rustdeskFolder "$newName.lnk"
             if (Test-Path $oldShortcut) {
-                # Update icon and rename
                 $lnk = $shell.CreateShortcut($oldShortcut)
                 if ($iconPath) { $lnk.IconLocation = "$iconPath,0" }
                 $lnk.Save()
                 Move-Item -Path $oldShortcut -Destination $newShortcut -Force -ErrorAction SilentlyContinue
             }
-            # Rename the folder too
             Rename-Item -Path $rustdeskFolder -NewName "Nerdy Neighbor Support" -Force -ErrorAction SilentlyContinue
         }
 
-        # Check for direct shortcut
         $oldShortcut = Join-Path $startMenu "RustDesk.lnk"
         $newShortcut = Join-Path $startMenu "$newName.lnk"
         if (Test-Path $oldShortcut) {
@@ -256,6 +246,40 @@ function Rename-Shortcuts {
     }
 
     Write-Status "Shortcuts customized" "Success"
+}
+
+function Configure-Service {
+    Write-Status "Configuring RustDesk service..."
+
+    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($service) {
+        # Set to Manual - won't auto-start on boot, but we start it now for the session
+        # This allows UAC interaction while not having it always running
+        Set-Service -Name "RustDesk" -StartupType Manual
+
+        # Start the service for this session (needed for UAC/secure desktop access)
+        if ($service.Status -ne 'Running') {
+            Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+        }
+        Write-Status "RustDesk service configured (manual start, running now)" "Success"
+    } else {
+        Write-Status "RustDesk service not found" "Warning"
+    }
+
+    # Disable RustDesk from startup apps (prevents GUI from auto-launching)
+    $startupPaths = @(
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"
+    )
+    foreach ($regPath in $startupPaths) {
+        if (Test-Path $regPath) {
+            Remove-ItemProperty -Path $regPath -Name "RustDesk" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $regPath -Name "RustDesk Tray" -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Status "Disabled RustDesk auto-start on login" "Success"
 }
 
 # =============================================================================
@@ -283,14 +307,22 @@ try {
     # Install RustDesk
     $rustdeskPath = Install-RustDesk -InstallerPath $installerPath
 
-    # Let RustDesk do first-run initialization (generates ID and default config)
-    Write-Status "Initializing RustDesk..."
-    Start-Process -FilePath $rustdeskPath -WindowStyle Hidden
+    # Let RustDesk do first-run initialization (generates ID)
+    Write-Status "Initializing RustDesk (generating ID)..."
+    Start-Process -FilePath $rustdeskPath
     Start-Sleep -Seconds 5
+
+    # Get device ID WHILE RustDesk is running (critical for ID persistence)
+    $deviceId = Get-RustDeskId -RustDeskPath $rustdeskPath
+
+    # Now stop RustDesk to apply our config
     Stop-RustDesk
 
-    # Now apply our config AFTER first-run (so it doesn't get overwritten)
-    Set-RustDeskConfig -RustDeskPath $rustdeskPath
+    # Apply our config AFTER first-run and ID generation
+    Set-RustDeskConfig
+
+    # Configure service (manual start but running for this session)
+    Configure-Service
 
     # Rename shortcuts to branded name
     Rename-Shortcuts
@@ -304,20 +336,19 @@ try {
     Start-Sleep -Seconds 1
 
     # Open RustDesk GUI
-    Open-RustDesk -RustDeskPath $rustdeskPath
+    Write-Status "Launching RustDesk..."
+    Start-Process -FilePath $rustdeskPath
 
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Green
     Write-Host "  Setup Complete!" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Green
     Write-Host ""
-    Write-Host "RustDesk is now opening." -ForegroundColor Yellow
+    Write-Host "Your Device ID: $deviceId" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "Please read your ID and one-time password" -ForegroundColor Yellow
-    Write-Host "to the support technician." -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "The ID is the 9+ digit number shown in the app." -ForegroundColor Cyan
-    Write-Host "The password is shown below the ID." -ForegroundColor Cyan
+    Write-Host "RustDesk is now open." -ForegroundColor Cyan
+    Write-Host "Please read your ID and one-time password" -ForegroundColor Cyan
+    Write-Host "to the support technician." -ForegroundColor Cyan
     Write-Host ""
 
     # Cleanup
