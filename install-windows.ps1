@@ -177,12 +177,32 @@ function Set-RunAsAdmin {
     Write-Status "Run as administrator compatibility setting applied" "Success"
 }
 
+function Create-Launcher {
+    Write-Status "Creating launcher script..."
+
+    # Create a launcher batch file that starts the service then launches RustDesk
+    $launcherPath = "C:\Program Files\RustDesk\StartRustDesk.cmd"
+    $launcherContent = @"
+@echo off
+:: Start RustDesk service (required for UAC/secure desktop access)
+net start RustDesk >nul 2>&1
+:: Launch RustDesk GUI
+start "" "C:\Program Files\RustDesk\rustdesk.exe"
+"@
+    $launcherContent | Out-File -FilePath $launcherPath -Encoding ASCII
+    Write-Status "Launcher script created" "Success"
+    return $launcherPath
+}
+
 function Rename-Shortcuts {
+    param([string]$LauncherPath)
+
     Write-Status "Customizing shortcuts for Nerdy Neighbor Support..."
 
     $newName = "Nerdy Neighbor Support - RustDesk"
     $iconUrl = "https://nerdyneighbor.net/icon.ico"
     $iconPath = "C:\Program Files\RustDesk\nerdy-neighbor.ico"
+    $rustdeskExe = "C:\Program Files\RustDesk\rustdesk.exe"
 
     # Download custom icon
     try {
@@ -197,21 +217,31 @@ function Rename-Shortcuts {
 
     $shell = New-Object -ComObject WScript.Shell
 
-    # Desktop shortcuts (current user and public)
+    # Remove old shortcuts and create new ones pointing to launcher
     $desktopPaths = @(
         [Environment]::GetFolderPath("Desktop"),
         [Environment]::GetFolderPath("CommonDesktopDirectory")
     )
 
     foreach ($desktop in $desktopPaths) {
+        # Remove old shortcut
         $oldShortcut = Join-Path $desktop "RustDesk.lnk"
-        $newShortcut = Join-Path $desktop "$newName.lnk"
         if (Test-Path $oldShortcut) {
-            $lnk = $shell.CreateShortcut($oldShortcut)
-            if ($iconPath) { $lnk.IconLocation = "$iconPath,0" }
-            $lnk.Save()
-            Move-Item -Path $oldShortcut -Destination $newShortcut -Force -ErrorAction SilentlyContinue
+            Remove-Item $oldShortcut -Force -ErrorAction SilentlyContinue
         }
+
+        # Create new shortcut pointing to launcher
+        $newShortcut = Join-Path $desktop "$newName.lnk"
+        $lnk = $shell.CreateShortcut($newShortcut)
+        $lnk.TargetPath = $LauncherPath
+        $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
+        if ($iconPath) {
+            $lnk.IconLocation = "$iconPath,0"
+        } else {
+            $lnk.IconLocation = "$rustdeskExe,0"
+        }
+        $lnk.Description = "Nerdy Neighbor Remote Support"
+        $lnk.Save()
     }
 
     # Start Menu shortcuts
@@ -222,26 +252,48 @@ function Rename-Shortcuts {
     )
 
     foreach ($startMenu in $startMenuPaths) {
+        # Check for RustDesk folder
         $rustdeskFolder = Join-Path $startMenu "RustDesk"
         if (Test-Path $rustdeskFolder) {
+            # Remove old shortcut
             $oldShortcut = Join-Path $rustdeskFolder "RustDesk.lnk"
-            $newShortcut = Join-Path $rustdeskFolder "$newName.lnk"
             if (Test-Path $oldShortcut) {
-                $lnk = $shell.CreateShortcut($oldShortcut)
-                if ($iconPath) { $lnk.IconLocation = "$iconPath,0" }
-                $lnk.Save()
-                Move-Item -Path $oldShortcut -Destination $newShortcut -Force -ErrorAction SilentlyContinue
+                Remove-Item $oldShortcut -Force -ErrorAction SilentlyContinue
             }
+
+            # Create new shortcut
+            $newShortcut = Join-Path $rustdeskFolder "$newName.lnk"
+            $lnk = $shell.CreateShortcut($newShortcut)
+            $lnk.TargetPath = $LauncherPath
+            $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
+            if ($iconPath) {
+                $lnk.IconLocation = "$iconPath,0"
+            } else {
+                $lnk.IconLocation = "$rustdeskExe,0"
+            }
+            $lnk.Description = "Nerdy Neighbor Remote Support"
+            $lnk.Save()
+
+            # Rename the folder
             Rename-Item -Path $rustdeskFolder -NewName "Nerdy Neighbor Support" -Force -ErrorAction SilentlyContinue
         }
 
+        # Check for direct shortcut in start menu
         $oldShortcut = Join-Path $startMenu "RustDesk.lnk"
-        $newShortcut = Join-Path $startMenu "$newName.lnk"
         if (Test-Path $oldShortcut) {
-            $lnk = $shell.CreateShortcut($oldShortcut)
-            if ($iconPath) { $lnk.IconLocation = "$iconPath,0" }
+            Remove-Item $oldShortcut -Force -ErrorAction SilentlyContinue
+
+            $newShortcut = Join-Path $startMenu "$newName.lnk"
+            $lnk = $shell.CreateShortcut($newShortcut)
+            $lnk.TargetPath = $LauncherPath
+            $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
+            if ($iconPath) {
+                $lnk.IconLocation = "$iconPath,0"
+            } else {
+                $lnk.IconLocation = "$rustdeskExe,0"
+            }
+            $lnk.Description = "Nerdy Neighbor Remote Support"
             $lnk.Save()
-            Move-Item -Path $oldShortcut -Destination $newShortcut -Force -ErrorAction SilentlyContinue
         }
     }
 
@@ -324,20 +376,23 @@ try {
     # Configure service (manual start but running for this session)
     Configure-Service
 
-    # Rename shortcuts to branded name
-    Rename-Shortcuts
+    # Create launcher script that starts service before launching RustDesk
+    $launcherPath = Create-Launcher
 
-    # Set RustDesk to always run as administrator
-    Set-RunAsAdmin -ExePath $rustdeskPath
+    # Rename shortcuts to branded name and point to launcher
+    Rename-Shortcuts -LauncherPath $launcherPath
+
+    # Set launcher to always run as administrator (so it can start the service)
+    Set-RunAsAdmin -ExePath $launcherPath
 
     # Refresh desktop to show new icons
     Write-Status "Refreshing desktop icons..."
     & ie4uinit.exe -show
     Start-Sleep -Seconds 1
 
-    # Open RustDesk GUI
+    # Open RustDesk GUI (via launcher to ensure service is started)
     Write-Status "Launching RustDesk..."
-    Start-Process -FilePath $rustdeskPath
+    Start-Process -FilePath $launcherPath
 
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Green
