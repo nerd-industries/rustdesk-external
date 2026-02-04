@@ -162,19 +162,19 @@ function Get-RustDeskId {
     return $id
 }
 
-function Set-RunAsAdmin {
-    param([string]$ExePath)
+function Set-ShortcutRunAsAdmin {
+    param([string]$ShortcutPath)
 
-    Write-Status "Setting RustDesk to always run as administrator..."
+    Write-Status "Setting shortcut to run as administrator..."
 
-    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
-
-    if (-not (Test-Path $regPath)) {
-        New-Item -Path $regPath -Force | Out-Null
+    # Modify the shortcut file directly to enable "Run as administrator"
+    # This sets bit 0x20 at byte offset 0x15 in the .lnk file
+    if (Test-Path $ShortcutPath) {
+        $bytes = [System.IO.File]::ReadAllBytes($ShortcutPath)
+        $bytes[0x15] = $bytes[0x15] -bor 0x20
+        [System.IO.File]::WriteAllBytes($ShortcutPath, $bytes)
+        Write-Status "Run as administrator flag set on shortcut" "Success"
     }
-
-    Set-ItemProperty -Path $regPath -Name $ExePath -Value "~ RUNASADMIN" -Type String
-    Write-Status "Run as administrator compatibility setting applied" "Success"
 }
 
 function Create-Launcher {
@@ -238,8 +238,8 @@ function Rename-Shortcuts {
 
     # Create ONE shortcut on Public Desktop (visible to all users)
     $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
-    $newShortcut = Join-Path $publicDesktop "$newName.lnk"
-    $lnk = $shell.CreateShortcut($newShortcut)
+    $desktopShortcut = Join-Path $publicDesktop "$newName.lnk"
+    $lnk = $shell.CreateShortcut($desktopShortcut)
     $lnk.TargetPath = $LauncherPath
     $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
     if ($iconPath) {
@@ -249,6 +249,9 @@ function Rename-Shortcuts {
     }
     $lnk.Description = "Nerdy Neighbor Remote Support"
     $lnk.Save()
+
+    # Set the desktop shortcut to run as administrator
+    Set-ShortcutRunAsAdmin -ShortcutPath $desktopShortcut
 
     # Start Menu shortcuts
     $startMenuPaths = @(
@@ -385,11 +388,8 @@ try {
     # Create launcher script that starts service before launching RustDesk
     $launcherPath = Create-Launcher
 
-    # Rename shortcuts to branded name and point to launcher
+    # Rename shortcuts to branded name, point to launcher, and set Run as Admin
     Rename-Shortcuts -LauncherPath $launcherPath
-
-    # Set launcher to always run as administrator (so it can start the service)
-    Set-RunAsAdmin -ExePath $launcherPath
 
     # Refresh desktop to show new icons
     Write-Status "Refreshing desktop icons..."
