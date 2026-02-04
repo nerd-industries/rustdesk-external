@@ -5,7 +5,7 @@
     Removes RustDesk and unregisters from the API dashboard
 
 .NOTES
-    Run with: irm <your-url>/uninstall.ps1 | iex
+    Run with: irm https://rustdesk-windows-uninstall.nerdyneighbor.net | iex
 #>
 
 # =============================================================================
@@ -103,13 +103,10 @@ function Uninstall-RustDesk {
         "${env:ProgramFiles(x86)}\RustDesk\rustdesk.exe"
     )
 
-    $uninstalled = $false
-
     foreach ($path in $uninstallPaths) {
         if (Test-Path $path) {
             try {
                 Start-Process -FilePath $path -ArgumentList "--uninstall" -Wait -ErrorAction Stop
-                $uninstalled = $true
                 break
             } catch {
                 Write-Status "Uninstall command failed, trying manual removal..." "Warning"
@@ -117,16 +114,9 @@ function Uninstall-RustDesk {
         }
     }
 
-    # Manual cleanup if --uninstall didn't work
     Start-Sleep -Seconds 3
 
-    # Remove custom icon file
-    $customIcon = "C:\Program Files\RustDesk\nerdy-neighbor.ico"
-    if (Test-Path $customIcon) {
-        Remove-Item -Path $customIcon -Force -ErrorAction SilentlyContinue
-    }
-
-    # Remove program files
+    # Remove program files (including launcher and custom icon)
     $programDirs = @(
         "C:\Program Files\RustDesk",
         "${env:ProgramFiles}\RustDesk",
@@ -153,33 +143,35 @@ function Uninstall-RustDesk {
         }
     }
 
-    # Remove service (suppress error if doesn't exist)
+    # Remove service
     $null = sc.exe delete RustDesk 2>&1
 
-    # Remove shortcuts (both original RustDesk and branded Nerdy Neighbor Support names)
-    $shortcuts = @(
-        # Original RustDesk shortcuts
-        (Join-Path ([Environment]::GetFolderPath("Desktop")) "RustDesk.lnk"),
-        (Join-Path ([Environment]::GetFolderPath("CommonDesktopDirectory")) "RustDesk.lnk"),
-        (Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs\RustDesk\RustDesk.lnk"),
-        (Join-Path ([Environment]::GetFolderPath("CommonStartMenu")) "Programs\RustDesk\RustDesk.lnk"),
-        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\RustDesk.lnk"),
-        # Branded Nerdy Neighbor Support shortcuts
-        (Join-Path ([Environment]::GetFolderPath("Desktop")) "Nerdy Neighbor Support - RustDesk.lnk"),
-        (Join-Path ([Environment]::GetFolderPath("CommonDesktopDirectory")) "Nerdy Neighbor Support - RustDesk.lnk"),
-        (Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs\Nerdy Neighbor Support\Nerdy Neighbor Support - RustDesk.lnk"),
-        (Join-Path ([Environment]::GetFolderPath("CommonStartMenu")) "Programs\Nerdy Neighbor Support\Nerdy Neighbor Support - RustDesk.lnk"),
-        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Nerdy Neighbor Support - RustDesk.lnk")
+    # Remove ALL shortcuts (original and branded names)
+    Write-Status "Removing shortcuts..."
+    $shortcutNames = @("RustDesk.lnk", "Nerdy Neighbor Support - RustDesk.lnk")
+    $shortcutLocations = @(
+        [Environment]::GetFolderPath("Desktop"),
+        [Environment]::GetFolderPath("CommonDesktopDirectory"),
+        (Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs"),
+        (Join-Path ([Environment]::GetFolderPath("CommonStartMenu")) "Programs"),
+        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs")
     )
 
-    foreach ($shortcut in $shortcuts) {
-        if (Test-Path $shortcut) {
-            Remove-Item -Path $shortcut -Force -ErrorAction SilentlyContinue
+    foreach ($location in $shortcutLocations) {
+        foreach ($name in $shortcutNames) {
+            $shortcut = Join-Path $location $name
+            if (Test-Path $shortcut) {
+                Remove-Item -Path $shortcut -Force -ErrorAction SilentlyContinue
+                Write-Status "Removed shortcut: $shortcut" "Info"
+            }
         }
-        # Also try removing parent folder if it exists (RustDesk or Nerdy Neighbor Support)
-        $parent = Split-Path $shortcut -Parent
-        if (($parent -match "RustDesk$" -or $parent -match "Nerdy Neighbor Support$") -and (Test-Path $parent)) {
-            Remove-Item -Path $parent -Recurse -Force -ErrorAction SilentlyContinue
+        # Remove RustDesk and Nerdy Neighbor Support folders
+        foreach ($folder in @("RustDesk", "Nerdy Neighbor Support")) {
+            $folderPath = Join-Path $location $folder
+            if (Test-Path $folderPath) {
+                Remove-Item -Path $folderPath -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Status "Removed folder: $folderPath" "Info"
+            }
         }
     }
 
@@ -195,6 +187,32 @@ function Uninstall-RustDesk {
         if (Test-Path $regPath) {
             Remove-Item -Path $regPath -Recurse -Force -ErrorAction SilentlyContinue
             Write-Status "Removed registry: $regPath" "Info"
+        }
+    }
+
+    # Remove "Run as Admin" compatibility flags for RustDesk and launcher
+    $compatPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
+    if (Test-Path $compatPath) {
+        $filesToRemove = @(
+            "C:\Program Files\RustDesk\rustdesk.exe",
+            "C:\Program Files\RustDesk\StartRustDesk.cmd"
+        )
+        foreach ($file in $filesToRemove) {
+            Remove-ItemProperty -Path $compatPath -Name $file -ErrorAction SilentlyContinue
+        }
+        Write-Status "Removed compatibility flags" "Info"
+    }
+
+    # Remove startup entries
+    $startupPaths = @(
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"
+    )
+    foreach ($regPath in $startupPaths) {
+        if (Test-Path $regPath) {
+            Remove-ItemProperty -Path $regPath -Name "RustDesk" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $regPath -Name "RustDesk Tray" -ErrorAction SilentlyContinue
         }
     }
 

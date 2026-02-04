@@ -217,32 +217,38 @@ function Rename-Shortcuts {
 
     $shell = New-Object -ComObject WScript.Shell
 
-    # Remove old shortcuts and create new ones pointing to launcher
+    # Remove old shortcuts from BOTH desktops, create new one only on Public Desktop
     $desktopPaths = @(
         [Environment]::GetFolderPath("Desktop"),
         [Environment]::GetFolderPath("CommonDesktopDirectory")
     )
 
     foreach ($desktop in $desktopPaths) {
-        # Remove old shortcut
+        # Remove old RustDesk shortcut
         $oldShortcut = Join-Path $desktop "RustDesk.lnk"
         if (Test-Path $oldShortcut) {
             Remove-Item $oldShortcut -Force -ErrorAction SilentlyContinue
         }
-
-        # Create new shortcut pointing to launcher
-        $newShortcut = Join-Path $desktop "$newName.lnk"
-        $lnk = $shell.CreateShortcut($newShortcut)
-        $lnk.TargetPath = $LauncherPath
-        $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
-        if ($iconPath) {
-            $lnk.IconLocation = "$iconPath,0"
-        } else {
-            $lnk.IconLocation = "$rustdeskExe,0"
+        # Remove any existing branded shortcut
+        $existingBranded = Join-Path $desktop "$newName.lnk"
+        if (Test-Path $existingBranded) {
+            Remove-Item $existingBranded -Force -ErrorAction SilentlyContinue
         }
-        $lnk.Description = "Nerdy Neighbor Remote Support"
-        $lnk.Save()
     }
+
+    # Create ONE shortcut on Public Desktop (visible to all users)
+    $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
+    $newShortcut = Join-Path $publicDesktop "$newName.lnk"
+    $lnk = $shell.CreateShortcut($newShortcut)
+    $lnk.TargetPath = $LauncherPath
+    $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
+    if ($iconPath) {
+        $lnk.IconLocation = "$iconPath,0"
+    } else {
+        $lnk.IconLocation = "$rustdeskExe,0"
+    }
+    $lnk.Description = "Nerdy Neighbor Remote Support"
+    $lnk.Save()
 
     # Start Menu shortcuts
     $startMenuPaths = @(
