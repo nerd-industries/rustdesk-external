@@ -111,7 +111,9 @@ function Install-RustDesk {
         if ($service.Status -ne 'Running') {
             Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
         }
-        Write-Status "RustDesk service configured for auto-start" "Success"
+        # Configure service recovery - restart on failure
+        sc.exe failure RustDesk reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+        Write-Status "RustDesk service configured for auto-start with recovery" "Success"
     }
 
     Write-Status "RustDesk installed successfully" "Success"
