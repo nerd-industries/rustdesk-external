@@ -58,7 +58,7 @@ try {
     $output = & $rustdeskPath --get-id 2>&1 | Out-String
     $output = $output.Trim()
     Write-Host "   Raw output: '$output'"
-    if ($output -match '(\d{9,})') {
+    if ($output -match '(\d{7,})') {
         Write-Host "   FOUND ID: $($matches[1])" -ForegroundColor Green
     } else {
         Write-Host "   No ID found in output" -ForegroundColor Red
@@ -96,10 +96,10 @@ foreach ($configPath in $configPaths) {
         if ($content -match 'enc_id\s*=\s*[''"]([^''"]+)[''"]') {
             Write-Host "   - Found enc_id (encrypted): $($matches[1])" -ForegroundColor Yellow
         }
-        if ($content -match '(?<!enc_)id\s*=\s*[''"]?(\d{9,})[''"]?') {
+        if ($content -match '(?<!enc_)id\s*=\s*[''"]?(\d{7,})[''"]?') {
             Write-Host "   - FOUND PLAIN ID: $($matches[1])" -ForegroundColor Green
         }
-        if ($content -match '^id\s*=\s*[''"]?(\d{9,})[''"]?' ) {
+        if ($content -match '^id\s*=\s*[''"]?(\d{7,})[''"]?' ) {
             Write-Host "   - FOUND ID AT START: $($matches[1])" -ForegroundColor Green
         }
     } else {
@@ -161,7 +161,7 @@ try {
     $output = & $rustdeskPath --get-id 2>&1 | Out-String
     $output = $output.Trim()
     Write-Host "   Raw output: '$output'"
-    if ($output -match '(\d{9,})') {
+    if ($output -match '(\d{7,})') {
         Write-Host "   FOUND ID: $($matches[1])" -ForegroundColor Green
     } else {
         Write-Host "   No ID found" -ForegroundColor Red
@@ -182,7 +182,7 @@ try {
     $output = & $rustdeskPath --get-id 2>&1 | Out-String
     $output = $output.Trim()
     Write-Host "   Raw output: '$output'"
-    if ($output -match '(\d{9,})') {
+    if ($output -match '(\d{7,})') {
         Write-Host "   FOUND ID: $($matches[1])" -ForegroundColor Green
     } else {
         Write-Host "   No ID found" -ForegroundColor Red

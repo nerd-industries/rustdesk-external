@@ -49,7 +49,7 @@ info "Looking for RustDesk installation..."
 DEVICE_ID=""
 
 if [[ -d "/Applications/RustDesk.app" ]]; then
-    DEVICE_ID=$(/Applications/RustDesk.app/Contents/MacOS/RustDesk --get-id 2>/dev/null | grep -oE '[0-9]{9,}' | head -1)
+    DEVICE_ID=$(/Applications/RustDesk.app/Contents/MacOS/RustDesk --get-id 2>/dev/null | grep -oE '[0-9]{7,}' | head -1)
 fi
 
 if [[ -n "$DEVICE_ID" ]]; then

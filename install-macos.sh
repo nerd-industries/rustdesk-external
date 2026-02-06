@@ -160,7 +160,7 @@ DEVICE_ID=""
 ATTEMPTS=0
 while [[ -z "$DEVICE_ID" ]] && [[ $ATTEMPTS -lt 10 ]]; do
     ATTEMPTS=$((ATTEMPTS + 1))
-    DEVICE_ID=$(/Applications/RustDesk.app/Contents/MacOS/RustDesk --get-id 2>/dev/null | grep -oE '[0-9]{9,}' | head -1)
+    DEVICE_ID=$(/Applications/RustDesk.app/Contents/MacOS/RustDesk --get-id 2>/dev/null | grep -oE '[0-9]{7,}' | head -1)
     if [[ -z "$DEVICE_ID" ]]; then
         warn "Waiting for ID (attempt $ATTEMPTS/10)..."
         sleep 3

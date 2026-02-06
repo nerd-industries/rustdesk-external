@@ -43,7 +43,7 @@ function Get-RustDeskId {
     foreach ($configPath in $configPaths) {
         if (Test-Path $configPath) {
             $config = Get-Content $configPath -Raw -ErrorAction SilentlyContinue
-            if ($config -match 'id\s*=\s*[''"]?(\d{9,})[''"]?') {
+            if ($config -match 'id\s*=\s*[''"]?(\d{7,})[''"]?') {
                 $id = $matches[1]
                 break
             }
@@ -55,7 +55,7 @@ function Get-RustDeskId {
         $rustdeskPath = "C:\Program Files\RustDesk\rustdesk.exe"
         if (Test-Path $rustdeskPath) {
             $output = & $rustdeskPath --get-id 2>&1 | Out-String
-            if ($output -match '(\d{9,})') {
+            if ($output -match '(\d{7,})') {
                 $id = $matches[1]
             }
         }
