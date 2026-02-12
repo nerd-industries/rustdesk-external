@@ -65,6 +65,25 @@ pkill -f "RustDesk" 2>/dev/null || true
 sleep 2
 success "RustDesk stopped"
 
+# Unload and remove LaunchDaemon and LaunchAgent
+info "Removing RustDesk service..."
+DAEMON_PLIST="/Library/LaunchDaemons/com.carriez.RustDesk_service.plist"
+AGENT_PLIST="/Library/LaunchAgents/com.carriez.RustDesk_server.plist"
+
+if [[ -f "$DAEMON_PLIST" ]]; then
+    launchctl unload -w "$DAEMON_PLIST" 2>/dev/null || true
+    rm -f "$DAEMON_PLIST"
+    info "Removed LaunchDaemon"
+fi
+
+if [[ -f "$AGENT_PLIST" ]]; then
+    launchctl unload -w "$AGENT_PLIST" 2>/dev/null || true
+    rm -f "$AGENT_PLIST"
+    info "Removed LaunchAgent"
+fi
+
+success "RustDesk service removed"
+
 # Unregister from API
 if [[ -n "$DEVICE_ID" ]]; then
     info "Removing device from dashboard..."
@@ -102,6 +121,7 @@ config_paths=(
     "$USER_HOME/Library/Application Support/RustDesk"
     "$USER_HOME/Library/Caches/RustDesk"
     "$USER_HOME/Library/Logs/RustDesk"
+    "/var/root/Library/Preferences/com.carriez.RustDesk"
 )
 
 for path in "${config_paths[@]}"; do
