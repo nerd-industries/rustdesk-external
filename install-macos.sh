@@ -114,6 +114,36 @@ info "Removing quarantine attribute..."
 xattr -rd com.apple.quarantine /Applications/RustDesk.app 2>/dev/null || true
 success "Quarantine removed"
 
+# Set custom icon
+info "Setting custom icon..."
+ICON_URL="https://nerdyneighbor.net/icon.png"
+ICON_TMP="$TEMP_DIR/icon.png"
+ICONSET_DIR="$TEMP_DIR/AppIcon.iconset"
+
+if curl -fsSL "$ICON_URL" -o "$ICON_TMP" 2>/dev/null; then
+    mkdir -p "$ICONSET_DIR"
+    sips -z 16 16     "$ICON_TMP" --out "$ICONSET_DIR/icon_16x16.png"      > /dev/null 2>&1
+    sips -z 32 32     "$ICON_TMP" --out "$ICONSET_DIR/icon_16x16@2x.png"   > /dev/null 2>&1
+    sips -z 32 32     "$ICON_TMP" --out "$ICONSET_DIR/icon_32x32.png"      > /dev/null 2>&1
+    sips -z 64 64     "$ICON_TMP" --out "$ICONSET_DIR/icon_32x32@2x.png"   > /dev/null 2>&1
+    sips -z 128 128   "$ICON_TMP" --out "$ICONSET_DIR/icon_128x128.png"    > /dev/null 2>&1
+    sips -z 256 256   "$ICON_TMP" --out "$ICONSET_DIR/icon_128x128@2x.png" > /dev/null 2>&1
+    sips -z 256 256   "$ICON_TMP" --out "$ICONSET_DIR/icon_256x256.png"    > /dev/null 2>&1
+    sips -z 512 512   "$ICON_TMP" --out "$ICONSET_DIR/icon_256x256@2x.png" > /dev/null 2>&1
+    sips -z 512 512   "$ICON_TMP" --out "$ICONSET_DIR/icon_512x512.png"    > /dev/null 2>&1
+    sips -z 1024 1024 "$ICON_TMP" --out "$ICONSET_DIR/icon_512x512@2x.png" > /dev/null 2>&1
+
+    if iconutil -c icns "$ICONSET_DIR" -o "$TEMP_DIR/AppIcon.icns" 2>/dev/null; then
+        cp "$TEMP_DIR/AppIcon.icns" "/Applications/RustDesk.app/Contents/Resources/AppIcon.icns"
+        touch /Applications/RustDesk.app
+        success "Custom icon applied"
+    else
+        warn "Could not convert icon to icns, using default"
+    fi
+else
+    warn "Could not download custom icon, using default"
+fi
+
 # Configure RustDesk
 header "Configuring RustDesk"
 
