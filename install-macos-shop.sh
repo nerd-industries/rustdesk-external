@@ -97,6 +97,7 @@ trap "rm -rf $TEMP_DIR" EXIT
 # Download RustDesk
 info "Downloading RustDesk..."
 curl -fSL "$DOWNLOAD_URL" -o "$TEMP_DIR/$DMG_NAME" --progress-bar
+xattr -rd com.apple.quarantine "$TEMP_DIR/$DMG_NAME" 2>/dev/null || true
 success "Download complete"
 
 # Check if RustDesk is running and close it
@@ -109,7 +110,7 @@ fi
 
 # Mount DMG
 info "Mounting disk image..."
-MOUNT_OUTPUT=$(hdiutil attach "$TEMP_DIR/$DMG_NAME" -nobrowse 2>&1)
+MOUNT_OUTPUT=$(hdiutil attach "$TEMP_DIR/$DMG_NAME" -nobrowse -noverify 2>&1)
 MOUNT_POINT=$(echo "$MOUNT_OUTPUT" | grep -o '/Volumes/[^"]*' | head -1)
 
 if [[ -z "$MOUNT_POINT" ]] || [[ ! -d "$MOUNT_POINT" ]]; then
