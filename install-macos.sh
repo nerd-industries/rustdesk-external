@@ -110,9 +110,9 @@ info "Unmounting disk image..."
 hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || hdiutil detach "$MOUNT_POINT" -force 2>/dev/null || true
 success "Unmounted"
 
-# Remove quarantine attribute
-info "Removing quarantine attribute..."
-xattr -rd com.apple.quarantine /Applications/RustDesk.app 2>/dev/null || true
+# Remove quarantine and clear extended attributes
+info "Removing quarantine attributes..."
+xattr -cr /Applications/RustDesk.app 2>/dev/null || true
 success "Quarantine removed"
 
 # Set custom icon
@@ -136,6 +136,7 @@ if curl -fsSL "$ICON_URL" -o "$ICON_TMP" 2>/dev/null; then
 
     if iconutil -c icns "$ICONSET_DIR" -o "$TEMP_DIR/AppIcon.icns" 2>/dev/null; then
         cp "$TEMP_DIR/AppIcon.icns" "/Applications/RustDesk.app/Contents/Resources/AppIcon.icns"
+        codesign --force --deep --sign - /Applications/RustDesk.app 2>/dev/null || true
         touch /Applications/RustDesk.app
         success "Custom icon applied"
     else
