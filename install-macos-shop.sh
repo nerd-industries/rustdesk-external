@@ -226,10 +226,17 @@ info "Launching RustDesk..."
 open /Applications/RustDesk.app
 sleep 3
 
-# Set password using command line (already running as root)
+# Stop RustDesk to set password (must not be running as user process)
 info "Setting permanent password..."
+osascript -e 'quit app "RustDesk"' 2>/dev/null || true
+pkill -x RustDesk 2>/dev/null || true
+sleep 2
 /Applications/RustDesk.app/Contents/MacOS/RustDesk --password "$PASSWORD" 2>/dev/null || warn "Could not set password via CLI - set it manually in RustDesk"
 sleep 2
+
+# Relaunch RustDesk
+open /Applications/RustDesk.app
+sleep 3
 
 # Get RustDesk ID
 info "Retrieving RustDesk ID..."
