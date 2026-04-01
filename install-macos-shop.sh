@@ -187,7 +187,9 @@ open /Applications/RustDesk.app
 sleep 5
 
 info "Closing RustDesk to apply configuration..."
-osascript -e 'quit app "RustDesk"' 2>/dev/null || pkill -x RustDesk 2>/dev/null || true
+osascript -e 'quit app "RustDesk"' 2>/dev/null || true
+sleep 1
+pkill -9 -f RustDesk 2>/dev/null || true
 sleep 2
 
 # Configure RustDesk
@@ -219,30 +221,22 @@ chown -R $SUDO_USER:staff "$CONFIG_DIR"
 
 success "Configuration written"
 
-# Start RustDesk again
+# Start RustDesk - IPC commands need the app running
 header "Starting RustDesk"
 
 info "Launching RustDesk..."
 open /Applications/RustDesk.app
-sleep 3
+sleep 5
 
-# Stop RustDesk to set password (must not be running as user process)
+# Set password while RustDesk is running (IPC requires running process)
 info "Setting permanent password..."
-osascript -e 'quit app "RustDesk"' 2>/dev/null || true
-pkill -x RustDesk 2>/dev/null || true
-sleep 2
 /Applications/RustDesk.app/Contents/MacOS/RustDesk --password "$PASSWORD" 2>/dev/null || warn "Could not set password via CLI - set it manually in RustDesk"
 sleep 2
 
-# Relaunch RustDesk
-open /Applications/RustDesk.app
-sleep 3
-
-# Get RustDesk ID
+# Get RustDesk ID while running
 info "Retrieving RustDesk ID..."
 DEVICE_ID=""
 
-# Wait and retry to get ID
 ATTEMPTS=0
 while [[ -z "$DEVICE_ID" ]] && [[ $ATTEMPTS -lt 10 ]]; do
     ATTEMPTS=$((ATTEMPTS + 1))

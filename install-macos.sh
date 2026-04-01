@@ -156,7 +156,9 @@ sleep 5
 
 # Close it so we can modify config
 info "Closing RustDesk to apply configuration..."
-osascript -e 'quit app "RustDesk"' 2>/dev/null || pkill -x RustDesk 2>/dev/null || true
+osascript -e 'quit app "RustDesk"' 2>/dev/null || true
+sleep 1
+pkill -9 -f RustDesk 2>/dev/null || true
 sleep 2
 
 CONFIG_DIR="$HOME/Library/Preferences/com.carriez.RustDesk"
