@@ -61,7 +61,8 @@ fi
 # Stop RustDesk
 info "Stopping RustDesk..."
 osascript -e 'quit app "RustDesk"' 2>/dev/null || true
-pkill -f "RustDesk" 2>/dev/null || true
+sleep 1
+pkill -9 -f RustDesk 2>/dev/null || true
 sleep 2
 success "RustDesk stopped"
 
