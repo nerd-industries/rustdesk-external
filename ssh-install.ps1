@@ -10,11 +10,18 @@
     starts the sshd service, drops the pubkey into
     C:\ProgramData\ssh\administrators_authorized_keys with the correct ACL
     (only SYSTEM and Administrators, no inheritance), and creates a firewall
-    rule for TCP 22 limited to LocalSubnet on Domain/Private profiles.
+    rule for TCP 22 limited to LocalSubnet on ANY network profile.
+
+    Profile=Any (not Domain,Private) so the rule still applies when Windows
+    has categorized the network as Public -- which it does for most newly-seen
+    networks. LocalSubnet still confines the rule to LAN traffic only, so a
+    Public-categorized home network is still not exposed to the internet.
 
 .NOTES
-    Run with: irm https://raw.githubusercontent.com/nerd-industries/rustdesk-external/main/setup-openssh.ps1 | iex
-    Or save and run: powershell.exe -ExecutionPolicy Bypass -File setup-openssh.ps1
+    Run with: irm https://ssh-install.nerdyneighbor.net | iex
+    Or save and run: powershell.exe -ExecutionPolicy Bypass -File ssh-install.ps1
+
+    To remove cleanly: irm https://ssh-uninstall.nerdyneighbor.net | iex
 #>
 
 $ErrorActionPreference = "Stop"
@@ -119,8 +126,24 @@ try {
         -Protocol TCP `
         -LocalPort 22 `
         -RemoteAddress LocalSubnet `
-        -Profile Domain,Private `
+        -Profile Any `
         -Program (Join-Path $InstallDir "sshd.exe") | Out-Null
+
+    # Surface a heads-up if the current network is categorized Public --
+    # not blocking, since Profile=Any + LocalSubnet still works, but the user
+    # may want to switch the network to Private for defense-in-depth.
+    $publicProfiles = Get-NetConnectionProfile -ErrorAction SilentlyContinue |
+        Where-Object NetworkCategory -eq 'Public'
+    if ($publicProfiles) {
+        Write-Host ""
+        Write-Host "    Note: these networks are categorized Public:" -ForegroundColor Yellow
+        $publicProfiles | ForEach-Object {
+            Write-Host "      - $($_.Name) ($($_.InterfaceAlias))" -ForegroundColor Yellow
+        }
+        Write-Host "    The firewall rule still works (Profile=Any + LocalSubnet)," -ForegroundColor Yellow
+        Write-Host "    but consider Set-NetConnectionProfile -NetworkCategory Private" -ForegroundColor Yellow
+        Write-Host "    for an extra layer." -ForegroundColor Yellow
+    }
 
     Show-Step "Verifying..."
     $sshd = Get-Service sshd

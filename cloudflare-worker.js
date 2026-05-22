@@ -24,8 +24,8 @@ export default {
       'rustdesk-macos': 'install-macos.sh',
       'rustdesk-macos-shop': 'install-macos-shop.sh',
       'rustdesk-macos-uninstall': 'uninstall-macos.sh',
-      'setup-openssh': 'setup-openssh.ps1',
-      'rustdesk-openssh': 'setup-openssh.ps1',
+      'ssh-install': 'ssh-install.ps1',
+      'ssh-uninstall': 'ssh-uninstall.ps1',
     };
 
     const filename = scripts[host];
