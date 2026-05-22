@@ -17,7 +17,11 @@ $ApiServer = "https://rustdesk-api.nerdyneighbor.net"
 # DO NOT EDIT BELOW THIS LINE
 # =============================================================================
 
-$ErrorActionPreference = "Stop"
+# Continue, not Stop: uninstall is best-effort cleanup. Individual missing
+# items (e.g., RustDesk Watchdog task only exists on customer installs, not
+# shop installs) shouldn't abort the whole tear-down. Explicit `throw`s for
+# real preconditions like admin-check are still caught by the try/catch below.
+$ErrorActionPreference = "Continue"
 
 function Write-Status {
     param([string]$Message, [string]$Type = "Info")
@@ -89,7 +93,9 @@ function Stop-RustDesk {
     # Remove the watchdog scheduled task FIRST so it doesn't fight us by
     # re-installing/starting the service we're about to remove. Sleep so
     # any already-running watchdog instance finishes before we proceed.
-    schtasks.exe /Delete /TN "RustDesk Watchdog" /F 2>&1 | Out-Null
+    # *>$null swallows all output streams -- the task may not exist (shop
+    # installs never created it) and that's fine.
+    schtasks.exe /Delete /TN "RustDesk Watchdog" /F *>$null
     Start-Sleep -Seconds 3
 
     # Stop the service
