@@ -86,6 +86,10 @@ function Unregister-Device {
 function Stop-RustDesk {
     Write-Status "Stopping RustDesk processes..."
 
+    # Remove the watchdog scheduled task FIRST so it doesn't fight us by
+    # re-installing/starting the service we're about to remove
+    schtasks.exe /Delete /TN "RustDesk Watchdog" /F 2>&1 | Out-Null
+
     # Stop the service
     Stop-Service -Name "RustDesk" -Force -ErrorAction SilentlyContinue
 

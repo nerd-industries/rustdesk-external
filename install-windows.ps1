@@ -5,17 +5,26 @@
 .NOTES
     Run with: irm https://rustdesk-windows.nerdyneighbor.net | iex
 
-    The Windows service is installed (required to capture UAC / the
-    secure desktop so the technician can fully control the PC during a
-    session) but NO permanent password is set, so each connection
-    still requires the customer to click "Accept". The GUI does not
-    auto-launch at login.
+    The RustDesk Windows service is installed (required for the tech to
+    capture UAC / the secure desktop) but no permanent password is set,
+    so every connection still requires the customer to click "Accept".
+
+    A SYSTEM-level watchdog scheduled task runs every minute to undo any
+    accidental tray "Stop Service" / "Exit" clicks: it re-installs the
+    service if it's been removed, starts it if it's stopped, and resets
+    the user's stop-service=Y back to empty in RustDesk2.toml. The
+    desktop shortcut also runs a launcher .cmd that resets stop-service
+    immediately before opening the GUI, so the customer never lands on
+    a yellow "Start Service" indicator.
 #>
 
 # Configuration
 $ApiServer = "https://rustdesk-api.nerdyneighbor.net"
 $RelayServer = "rustdesk-relay.nerdyneighbor.net"
 $PublicKey = "D11ZYHgpIWTNhltCBMe0f2MQzk+RQp4sI01KbqZj0l4="
+
+$InstallDir = "C:\Program Files\RustDesk"
+$WatchdogTaskName = "RustDesk Watchdog"
 
 $ErrorActionPreference = "Stop"
 
@@ -49,7 +58,7 @@ function Stop-RustDesk {
 function Install-RustDesk {
     param([string]$InstallerPath)
     Start-Process -FilePath $InstallerPath -ArgumentList "--silent-install"
-    $rustdeskPath = "C:\Program Files\RustDesk\rustdesk.exe"
+    $rustdeskPath = Join-Path $InstallDir "rustdesk.exe"
     $maxWait = 120
     $waited = 0
     while (-not (Test-Path $rustdeskPath) -and $waited -lt $maxWait) {
@@ -61,7 +70,6 @@ function Install-RustDesk {
     }
     Start-Sleep -Seconds 5
 
-    # Service is required for UAC / secure-desktop capture
     $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
     if ($service) {
         Set-Service -Name "RustDesk" -StartupType Automatic
@@ -85,7 +93,7 @@ relay-server = '$RelayServer'
 key = '$PublicKey'
 custom-rendezvous-server = '$RelayServer'
 api-server = '$ApiServer'
-hide-stop-service = 'Y'
+stop-service = ''
 "@
     $userConfigDir = Join-Path $env:APPDATA "RustDesk\config"
     if (-not (Test-Path $userConfigDir)) {
@@ -151,22 +159,75 @@ function Remove-StartupEntries {
     }
 }
 
-function Remove-LegacyLauncher {
-    $launcherPath = "C:\Program Files\RustDesk\StartRustDesk.cmd"
-    if (Test-Path $launcherPath) {
-        Remove-Item $launcherPath -Force -ErrorAction SilentlyContinue
+function Write-LauncherScripts {
+    $launcherPs1 = @'
+$ErrorActionPreference = "SilentlyContinue"
+$cfg = Join-Path $env:APPDATA "RustDesk\config\RustDesk2.toml"
+if (Test-Path $cfg) {
+    $c = Get-Content $cfg -Raw
+    if ($c -and $c -match "stop-service\s*=\s*['""]Y['""]") {
+        $c = $c -replace "stop-service\s*=\s*['""]Y['""]", "stop-service = ''"
+        Set-Content -Path $cfg -Value $c -NoNewline -Encoding UTF8
     }
-    $compatPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
-    if (Test-Path $compatPath) {
-        Remove-ItemProperty -Path $compatPath -Name $launcherPath -ErrorAction SilentlyContinue
+}
+Start-Process -FilePath "C:\Program Files\RustDesk\rustdesk.exe"
+'@
+    $launcherPs1 | Out-File -FilePath (Join-Path $InstallDir "StartRustDesk.ps1") -Encoding UTF8
+
+    $launcherCmd = "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"%~dp0StartRustDesk.ps1`""
+    $launcherCmd | Out-File -FilePath (Join-Path $InstallDir "StartRustDesk.cmd") -Encoding ASCII
+
+    $watchdogPs1 = @'
+$ErrorActionPreference = "SilentlyContinue"
+
+$svc = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+if (-not $svc) {
+    $exe = "C:\Program Files\RustDesk\rustdesk.exe"
+    if (Test-Path $exe) {
+        Start-Process -FilePath $exe -ArgumentList "--install-service" -WindowStyle Hidden -Wait
+        Start-Sleep -Seconds 3
+        Set-Service -Name "RustDesk" -StartupType Automatic -ErrorAction SilentlyContinue
+        Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    }
+} else {
+    if ($svc.StartType -ne 'Automatic') {
+        Set-Service -Name "RustDesk" -StartupType Automatic -ErrorAction SilentlyContinue
+    }
+    if ($svc.Status -ne 'Running') {
+        Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
     }
 }
 
+$tomlPaths = @("C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk2.toml")
+foreach ($u in Get-ChildItem -Path "C:\Users" -Directory -ErrorAction SilentlyContinue) {
+    $tomlPaths += Join-Path $u.FullName "AppData\Roaming\RustDesk\config\RustDesk2.toml"
+}
+
+foreach ($p in $tomlPaths) {
+    if (Test-Path $p) {
+        $c = Get-Content $p -Raw -ErrorAction SilentlyContinue
+        if ($c -and $c -match "stop-service\s*=\s*['""]Y['""]") {
+            $c = $c -replace "stop-service\s*=\s*['""]Y['""]", "stop-service = ''"
+            Set-Content -Path $p -Value $c -NoNewline -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+    }
+}
+'@
+    $watchdogPs1 | Out-File -FilePath (Join-Path $InstallDir "Watchdog.ps1") -Encoding UTF8
+}
+
+function Register-Watchdog {
+    schtasks.exe /Delete /TN $WatchdogTaskName /F 2>&1 | Out-Null
+    $watchdog = Join-Path $InstallDir "Watchdog.ps1"
+    $cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchdog`""
+    schtasks.exe /Create /TN $WatchdogTaskName /TR $cmd /SC MINUTE /MO 1 /RU "SYSTEM" /RL HIGHEST /F 2>&1 | Out-Null
+}
+
 function Setup-Shortcuts {
-    param([string]$RustDeskExe)
+    param([string]$LauncherPath, [string]$IconSource)
     $newName = "Nerdy Neighbor Support - RustDesk"
     $iconUrl = "https://nerdyneighbor.net/icon.ico"
-    $iconPath = "C:\Program Files\RustDesk\nerdy-neighbor.ico"
+    $iconPath = Join-Path $InstallDir "nerdy-neighbor.ico"
 
     try {
         $ProgressPreference = 'SilentlyContinue'
@@ -185,9 +246,9 @@ function Setup-Shortcuts {
     $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
     $desktopShortcut = Join-Path $publicDesktop "$newName.lnk"
     $lnk = $shell.CreateShortcut($desktopShortcut)
-    $lnk.TargetPath = $RustDeskExe
-    $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
-    $lnk.IconLocation = if ($iconPath) { "$iconPath,0" } else { "$RustDeskExe,0" }
+    $lnk.TargetPath = $LauncherPath
+    $lnk.WorkingDirectory = $InstallDir
+    $lnk.IconLocation = if ($iconPath) { "$iconPath,0" } else { "$IconSource,0" }
     $lnk.Description = "Nerdy Neighbor Remote Support"
     $lnk.Save()
 
@@ -202,9 +263,9 @@ function Setup-Shortcuts {
             Remove-Item (Join-Path $rustdeskFolder "RustDesk.lnk") -Force -ErrorAction SilentlyContinue
             $newShortcut = Join-Path $rustdeskFolder "$newName.lnk"
             $lnk = $shell.CreateShortcut($newShortcut)
-            $lnk.TargetPath = $RustDeskExe
-            $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
-            $lnk.IconLocation = if ($iconPath) { "$iconPath,0" } else { "$RustDeskExe,0" }
+            $lnk.TargetPath = $LauncherPath
+            $lnk.WorkingDirectory = $InstallDir
+            $lnk.IconLocation = if ($iconPath) { "$iconPath,0" } else { "$IconSource,0" }
             $lnk.Save()
             Rename-Item -Path $rustdeskFolder -NewName "Nerdy Neighbor Support" -Force -ErrorAction SilentlyContinue
         }
@@ -251,10 +312,10 @@ try {
     Set-RustDeskConfig
     Remove-RustDeskPrinter
     Remove-StartupEntries
-    Remove-LegacyLauncher
+    Write-LauncherScripts
+    Register-Watchdog
     Set-RunAsAdmin -ExePath $rustdeskPath
 
-    # Restart service so it picks up the new relay config
     Stop-RustDesk
     Start-Sleep -Seconds 2
     $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
@@ -262,7 +323,8 @@ try {
         Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
     }
 
-    Setup-Shortcuts -RustDeskExe $rustdeskPath
+    $launcherCmd = Join-Path $InstallDir "StartRustDesk.cmd"
+    Setup-Shortcuts -LauncherPath $launcherCmd -IconSource $rustdeskPath
 
     & ie4uinit.exe -show 2>$null
     Start-Sleep -Seconds 1
