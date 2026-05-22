@@ -85,6 +85,7 @@ relay-server = '$RelayServer'
 key = '$PublicKey'
 custom-rendezvous-server = '$RelayServer'
 api-server = '$ApiServer'
+hide-stop-service = 'Y'
 "@
     $userConfigDir = Join-Path $env:APPDATA "RustDesk\config"
     if (-not (Test-Path $userConfigDir)) {
