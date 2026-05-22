@@ -3,7 +3,7 @@
 .SYNOPSIS
     RustDesk Customer Installation Script
 .NOTES
-    Run with: irm https://rustdesk-windows.nerdyneighbor.net | iex
+    Run with: irm https://rustdesk.nerdyneighbor.net | iex
 
     The RustDesk Windows service is installed (required for the tech to
     capture UAC / the secure desktop) but no permanent password is set,

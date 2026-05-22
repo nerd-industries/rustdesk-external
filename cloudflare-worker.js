@@ -16,8 +16,11 @@ export default {
 
     const scripts = {
       'rustdesk': 'install-windows.ps1',
+      'rustdesk-windows': 'install-windows.ps1',
       'rustdesk-shop': 'install-windows-shop.ps1',
+      'rustdesk-windows-shop': 'install-windows-shop.ps1',
       'rustdesk-uninstall': 'uninstall-windows.ps1',
+      'rustdesk-windows-uninstall': 'uninstall-windows.ps1',
       'rustdesk-macos': 'install-macos.sh',
       'rustdesk-macos-shop': 'install-macos-shop.sh',
       'rustdesk-macos-uninstall': 'uninstall-macos.sh',

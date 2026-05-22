@@ -5,7 +5,7 @@
     Removes RustDesk and unregisters from the API dashboard
 
 .NOTES
-    Run with: irm https://rustdesk-windows-uninstall.nerdyneighbor.net | iex
+    Run with: irm https://rustdesk-uninstall.nerdyneighbor.net | iex
 #>
 
 # =============================================================================
@@ -87,14 +87,17 @@ function Stop-RustDesk {
     Write-Status "Stopping RustDesk processes..."
 
     # Remove the watchdog scheduled task FIRST so it doesn't fight us by
-    # re-installing/starting the service we're about to remove
+    # re-installing/starting the service we're about to remove. Sleep so
+    # any already-running watchdog instance finishes before we proceed.
     schtasks.exe /Delete /TN "RustDesk Watchdog" /F 2>&1 | Out-Null
+    Start-Sleep -Seconds 3
 
     # Stop the service
     Stop-Service -Name "RustDesk" -Force -ErrorAction SilentlyContinue
 
-    # Kill any remaining processes
-    Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force
+    # Kill any remaining processes (rustdesk.exe and any watchdog
+    # powershell.exe still touching RustDesk files)
+    Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
 }
 
