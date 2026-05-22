@@ -75,11 +75,6 @@ api-server = '$ApiServer'
         New-Item -ItemType Directory -Path $userConfigDir -Force | Out-Null
     }
     $configContent | Out-File -FilePath (Join-Path $userConfigDir "RustDesk2.toml") -Encoding UTF8
-    $serviceConfigDir = "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config"
-    if (-not (Test-Path $serviceConfigDir)) {
-        New-Item -ItemType Directory -Path $serviceConfigDir -Force | Out-Null
-    }
-    $configContent | Out-File -FilePath (Join-Path $serviceConfigDir "RustDesk2.toml") -Encoding UTF8
 }
 
 function Get-RustDeskId {
@@ -101,32 +96,54 @@ function Get-RustDeskId {
     return $id
 }
 
-function Set-ShortcutRunAsAdmin {
-    param([string]$ShortcutPath)
-    if (Test-Path $ShortcutPath) {
-        $bytes = [System.IO.File]::ReadAllBytes($ShortcutPath)
-        $bytes[0x15] = $bytes[0x15] -bor 0x20
-        [System.IO.File]::WriteAllBytes($ShortcutPath, $bytes)
+function Set-RunAsAdmin {
+    param([string]$ExePath)
+    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
+    if (-not (Test-Path $regPath)) {
+        New-Item -Path $regPath -Force | Out-Null
+    }
+    Set-ItemProperty -Path $regPath -Name $ExePath -Value "~ RUNASADMIN" -Type String
+}
+
+function Remove-RustDeskService {
+    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($service) {
+        Stop-Service -Name "RustDesk" -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        $null = sc.exe delete RustDesk 2>&1
     }
 }
 
-function Create-Launcher {
-    $launcherPath = "C:\Program Files\RustDesk\StartRustDesk.cmd"
-    $launcherContent = @"
-@echo off
-net start RustDesk >nul 2>&1
-start "" "C:\Program Files\RustDesk\rustdesk.exe"
-"@
-    $launcherContent | Out-File -FilePath $launcherPath -Encoding ASCII
-    return $launcherPath
+function Remove-RustDeskPrinter {
+    Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*RustDesk*" } | ForEach-Object {
+        Remove-Printer -Name $_.Name -ErrorAction SilentlyContinue
+    }
+    Get-PrinterDriver -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*RustDesk*" } | ForEach-Object {
+        Remove-PrinterDriver -Name $_.Name -ErrorAction SilentlyContinue
+    }
+}
+
+function Remove-StartupEntries {
+    $startupPaths = @(
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"
+    )
+    foreach ($regPath in $startupPaths) {
+        if (Test-Path $regPath) {
+            Remove-ItemProperty -Path $regPath -Name "RustDesk" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $regPath -Name "RustDesk Tray" -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Setup-Shortcuts {
-    param([string]$LauncherPath)
+    param([string]$RustDeskExe)
     $newName = "Nerdy Neighbor Support - RustDesk"
     $iconUrl = "https://nerdyneighbor.net/icon.ico"
     $iconPath = "C:\Program Files\RustDesk\nerdy-neighbor.ico"
-    $rustdeskExe = "C:\Program Files\RustDesk\rustdesk.exe"
 
     try {
         $ProgressPreference = 'SilentlyContinue'
@@ -145,12 +162,11 @@ function Setup-Shortcuts {
     $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
     $desktopShortcut = Join-Path $publicDesktop "$newName.lnk"
     $lnk = $shell.CreateShortcut($desktopShortcut)
-    $lnk.TargetPath = $LauncherPath
+    $lnk.TargetPath = $RustDeskExe
     $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
-    $lnk.IconLocation = if ($iconPath) { "$iconPath,0" } else { "$rustdeskExe,0" }
+    $lnk.IconLocation = if ($iconPath) { "$iconPath,0" } else { "$RustDeskExe,0" }
     $lnk.Description = "Nerdy Neighbor Remote Support"
     $lnk.Save()
-    Set-ShortcutRunAsAdmin -ShortcutPath $desktopShortcut
 
     $startMenuPaths = @(
         (Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs"),
@@ -163,37 +179,15 @@ function Setup-Shortcuts {
             Remove-Item (Join-Path $rustdeskFolder "RustDesk.lnk") -Force -ErrorAction SilentlyContinue
             $newShortcut = Join-Path $rustdeskFolder "$newName.lnk"
             $lnk = $shell.CreateShortcut($newShortcut)
-            $lnk.TargetPath = $LauncherPath
+            $lnk.TargetPath = $RustDeskExe
             $lnk.WorkingDirectory = "C:\Program Files\RustDesk"
-            $lnk.IconLocation = if ($iconPath) { "$iconPath,0" } else { "$rustdeskExe,0" }
+            $lnk.IconLocation = if ($iconPath) { "$iconPath,0" } else { "$RustDeskExe,0" }
             $lnk.Save()
             Rename-Item -Path $rustdeskFolder -NewName "Nerdy Neighbor Support" -Force -ErrorAction SilentlyContinue
         }
         $oldShortcut = Join-Path $startMenu "RustDesk.lnk"
         if (Test-Path $oldShortcut) {
             Remove-Item $oldShortcut -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-function Configure-Service {
-    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-    if ($service) {
-        Set-Service -Name "RustDesk" -StartupType Manual
-        if ($service.Status -ne 'Running') {
-            Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-        }
-    }
-    $startupPaths = @(
-        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"
-    )
-    foreach ($regPath in $startupPaths) {
-        if (Test-Path $regPath) {
-            Remove-ItemProperty -Path $regPath -Name "RustDesk" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $regPath -Name "RustDesk Tray" -ErrorAction SilentlyContinue
         }
     }
 }
@@ -231,14 +225,17 @@ try {
     $deviceId = Get-RustDeskId -RustDeskPath $rustdeskPath
     Stop-RustDesk
 
+    Remove-RustDeskService
+    Remove-RustDeskPrinter
+    Remove-StartupEntries
+
     Set-RustDeskConfig
-    Configure-Service
-    $launcherPath = Create-Launcher
-    Setup-Shortcuts -LauncherPath $launcherPath
+    Set-RunAsAdmin -ExePath $rustdeskPath
+    Setup-Shortcuts -RustDeskExe $rustdeskPath
 
     & ie4uinit.exe -show 2>$null
     Start-Sleep -Seconds 1
-    Start-Process -FilePath $launcherPath
+    Start-Process -FilePath $rustdeskPath
 
     Clear-Host
     Write-Host ""

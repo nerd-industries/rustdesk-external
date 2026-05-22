@@ -219,6 +219,16 @@ function Uninstall-RustDesk {
     # Remove firewall rules
     Remove-NetFirewallRule -DisplayName "*RustDesk*" -ErrorAction SilentlyContinue
 
+    # Remove RustDesk virtual printer and driver
+    Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*RustDesk*" } | ForEach-Object {
+        Remove-Printer -Name $_.Name -ErrorAction SilentlyContinue
+        Write-Status "Removed printer: $($_.Name)" "Info"
+    }
+    Get-PrinterDriver -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*RustDesk*" } | ForEach-Object {
+        Remove-PrinterDriver -Name $_.Name -ErrorAction SilentlyContinue
+        Write-Status "Removed printer driver: $($_.Name)" "Info"
+    }
+
     Write-Status "RustDesk uninstalled" "Success"
 }
 
