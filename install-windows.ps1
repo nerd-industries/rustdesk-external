@@ -4,6 +4,12 @@
     RustDesk Customer Installation Script
 .NOTES
     Run with: irm https://rustdesk-windows.nerdyneighbor.net | iex
+
+    The Windows service is installed (required to capture UAC / the
+    secure desktop so the technician can fully control the PC during a
+    session) but NO permanent password is set, so each connection
+    still requires the customer to click "Accept". The GUI does not
+    auto-launch at login.
 #>
 
 # Configuration
@@ -54,6 +60,16 @@ function Install-RustDesk {
         throw "Installation failed"
     }
     Start-Sleep -Seconds 5
+
+    # Service is required for UAC / secure-desktop capture
+    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($service) {
+        Set-Service -Name "RustDesk" -StartupType Automatic
+        if ($service.Status -ne 'Running') {
+            Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+        }
+        sc.exe failure RustDesk reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+    }
     return $rustdeskPath
 }
 
@@ -75,6 +91,12 @@ api-server = '$ApiServer'
         New-Item -ItemType Directory -Path $userConfigDir -Force | Out-Null
     }
     $configContent | Out-File -FilePath (Join-Path $userConfigDir "RustDesk2.toml") -Encoding UTF8
+
+    $serviceConfigDir = "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config"
+    if (-not (Test-Path $serviceConfigDir)) {
+        New-Item -ItemType Directory -Path $serviceConfigDir -Force | Out-Null
+    }
+    $configContent | Out-File -FilePath (Join-Path $serviceConfigDir "RustDesk2.toml") -Encoding UTF8
 }
 
 function Get-RustDeskId {
@@ -105,17 +127,6 @@ function Set-RunAsAdmin {
     Set-ItemProperty -Path $regPath -Name $ExePath -Value "~ RUNASADMIN" -Type String
 }
 
-function Remove-RustDeskService {
-    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-    if ($service) {
-        Stop-Service -Name "RustDesk" -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 2
-        Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 1
-        $null = sc.exe delete RustDesk 2>&1
-    }
-}
-
 function Remove-RustDeskPrinter {
     Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*RustDesk*" } | ForEach-Object {
         Remove-Printer -Name $_.Name -ErrorAction SilentlyContinue
@@ -136,6 +147,17 @@ function Remove-StartupEntries {
             Remove-ItemProperty -Path $regPath -Name "RustDesk" -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path $regPath -Name "RustDesk Tray" -ErrorAction SilentlyContinue
         }
+    }
+}
+
+function Remove-LegacyLauncher {
+    $launcherPath = "C:\Program Files\RustDesk\StartRustDesk.cmd"
+    if (Test-Path $launcherPath) {
+        Remove-Item $launcherPath -Force -ErrorAction SilentlyContinue
+    }
+    $compatPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
+    if (Test-Path $compatPath) {
+        Remove-ItemProperty -Path $compatPath -Name $launcherPath -ErrorAction SilentlyContinue
     }
 }
 
@@ -225,12 +247,20 @@ try {
     $deviceId = Get-RustDeskId -RustDeskPath $rustdeskPath
     Stop-RustDesk
 
-    Remove-RustDeskService
+    Set-RustDeskConfig
     Remove-RustDeskPrinter
     Remove-StartupEntries
-
-    Set-RustDeskConfig
+    Remove-LegacyLauncher
     Set-RunAsAdmin -ExePath $rustdeskPath
+
+    # Restart service so it picks up the new relay config
+    Stop-RustDesk
+    Start-Sleep -Seconds 2
+    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($service) {
+        Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    }
+
     Setup-Shortcuts -RustDeskExe $rustdeskPath
 
     & ie4uinit.exe -show 2>$null
