@@ -217,10 +217,17 @@ foreach ($p in $tomlPaths) {
 }
 
 function Register-Watchdog {
-    schtasks.exe /Delete /TN $WatchdogTaskName /F 2>&1 | Out-Null
+    Unregister-ScheduledTask -TaskName $WatchdogTaskName -Confirm:$false -ErrorAction SilentlyContinue
+
     $watchdog = Join-Path $InstallDir "Watchdog.ps1"
-    $cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchdog`""
-    schtasks.exe /Create /TN $WatchdogTaskName /TR $cmd /SC MINUTE /MO 1 /RU "SYSTEM" /RL HIGHEST /F 2>&1 | Out-Null
+    $argString = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchdog`""
+
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $argString
+    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+    $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
+
+    Register-ScheduledTask -TaskName $WatchdogTaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 }
 
 function Setup-Shortcuts {
@@ -354,9 +361,22 @@ try {
     Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
 
 } catch {
+    $logPath = Join-Path $env:TEMP "nerdy-rustdesk-install.log"
+    try {
+        $errMsg = "$(Get-Date -Format o)`r`n$_`r`n`r`nScriptStackTrace:`r`n$($_.ScriptStackTrace)`r`n`r`nInvocationInfo:`r`n$($_.InvocationInfo | Out-String)"
+        $errMsg | Out-File -FilePath $logPath -Force -Encoding UTF8
+    } catch { }
     Write-Host ""
     Write-Host "  Something went wrong." -ForegroundColor Red
-    Write-Host "  Please contact support for help." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor White
+    Write-Host ""
+    if ($_.InvocationInfo.ScriptLineNumber) {
+        Write-Host "  Line $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+    Write-Host "  Full log: $logPath" -ForegroundColor Gray
+    Write-Host "  Please share this output with support." -ForegroundColor Yellow
     Write-Host ""
     Read-Host "  Press Enter to close"
     exit 1
