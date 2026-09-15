@@ -50,6 +50,18 @@ function Get-RandomPassword {
     return $password
 }
 
+function Save-CustomerName {
+    param([string]$Name)
+    # Persist the customer name to a hidden file so a later convert run can
+    # recover it without re-prompting. Hidden attribute keeps it out of sight.
+    $dir = "C:\ProgramData\NerdyNeighbor"
+    $path = Join-Path $dir "rustdesk-customer.txt"
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $Name | Out-File -FilePath $path -Encoding UTF8
+    attrib.exe +h $path | Out-Null
+    Write-Status "Customer name saved" "Success"
+}
+
 function Get-LatestRustDeskVersion {
     Write-Status "Fetching latest RustDesk version..."
     $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/rustdesk/rustdesk/releases/latest"
@@ -403,6 +415,9 @@ try {
 
     # Register with API server
     Register-Device -DeviceId $deviceId -Password $password -CustomerName $customerName
+
+    # Save the customer name to a hidden file for later convert runs
+    Save-CustomerName -Name $customerName
 
     # Display results
     Write-Host ""
