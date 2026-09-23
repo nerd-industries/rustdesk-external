@@ -56,10 +56,18 @@ function Save-CustomerName {
     # recover it without re-prompting. Hidden attribute keeps it out of sight.
     $dir = "C:\ProgramData\NerdyNeighbor"
     $path = Join-Path $dir "rustdesk-customer.txt"
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    $Name | Out-File -FilePath $path -Encoding UTF8
-    attrib.exe +h $path | Out-Null
-    Write-Status "Customer name saved" "Success"
+    try {
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        # Overwriting a HIDDEN file throws "Access denied", so unhide a file left
+        # by a previous install before rewriting it.
+        if (Test-Path $path) { attrib.exe -h $path | Out-Null }
+        $Name | Out-File -FilePath $path -Encoding UTF8
+        attrib.exe +h $path | Out-Null
+        Write-Status "Customer name saved" "Success"
+    } catch {
+        # Only a convenience for later convert runs; don't fail the install over it.
+        Write-Status "Could not save customer name: $($_.Exception.Message)" "Warning"
+    }
 }
 
 function Get-LatestRustDeskVersion {
