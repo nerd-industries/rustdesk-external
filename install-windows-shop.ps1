@@ -87,9 +87,42 @@ function Get-RustDeskInstaller {
 }
 
 function Stop-RustDesk {
-    Write-Status "Stopping any running RustDesk processes..."
-    Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Write-Status "Stopping RustDesk service and processes..."
+
+    # IMPORTANT: the service has auto-restart recovery (sc.exe failure ... restart).
+    # If we only kill processes, the SCM relaunches the service within seconds and it
+    # re-locks the exe, which then breaks the installer's "restart service" step.
+    # Reset recovery FIRST so nothing relaunches while we work, then stop the service
+    # and WAIT until it is actually stopped (or gone).
+    sc.exe failure RustDesk reset= 0 actions= "" | Out-Null
+
+    # Kill GUI/tray/agent processes first so they release file locks
+    Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
+
+    # Stop the service and wait for it to actually stop
+    $svc = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($svc) {
+        if ($svc.Status -ne 'Stopped') {
+            Stop-Service -Name "RustDesk" -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+        }
+        sc.exe stop RustDesk *>$null
+        $waited = 0
+        while ($waited -lt 30) {
+            $s = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+            if (-not $s -or $s.Status -eq 'Stopped') { break }
+            Start-Sleep -Seconds 2
+            $waited += 2
+        }
+        if (Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue) {
+            Write-Status "Service still running; deleting it so the installer can replace it" "Warning"
+            sc.exe delete RustDesk *>$null
+            Start-Sleep -Seconds 2
+        } else {
+            Write-Status "RustDesk service stopped" "Success"
+        }
+    }
 }
 
 function Install-RustDesk {
@@ -150,19 +183,28 @@ custom-rendezvous-server = '$RelayServer'
 api-server = '$ApiServer'
 "@
 
-    # Write config to user profile
+    # Write config to user profile (the interactive GUI)
     $userConfigDir = Join-Path $env:APPDATA "RustDesk\config"
     if (-not (Test-Path $userConfigDir)) {
         New-Item -ItemType Directory -Path $userConfigDir -Force | Out-Null
     }
     $configContent | Out-File -FilePath (Join-Path $userConfigDir "RustDesk2.toml") -Encoding UTF8
 
-    # Write config to service profile (for unattended access)
-    $serviceConfigDir = "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config"
-    if (-not (Test-Path $serviceConfigDir)) {
-        New-Item -ItemType Directory -Path $serviceConfigDir -Force | Out-Null
+    # Write config to BOTH service-account profiles. The RustDesk service can run as
+    # either LocalSystem (shop install default) or LocalService (customer install),
+    # and each reads config from a different profile directory. Writing to both, plus
+    # the systemprofile path that LocalSystem actually uses, guarantees the service
+    # connects to OUR servers no matter which account it runs under.
+    $serviceConfigDirs = @(
+        "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config",
+        "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config"
+    )
+    foreach ($serviceConfigDir in $serviceConfigDirs) {
+        if (-not (Test-Path $serviceConfigDir)) {
+            New-Item -ItemType Directory -Path $serviceConfigDir -Force | Out-Null
+        }
+        $configContent | Out-File -FilePath (Join-Path $serviceConfigDir "RustDesk2.toml") -Encoding UTF8
     }
-    $configContent | Out-File -FilePath (Join-Path $serviceConfigDir "RustDesk2.toml") -Encoding UTF8
 
     Write-Status "Configuration applied" "Success"
 }
