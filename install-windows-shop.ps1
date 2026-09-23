@@ -93,14 +93,22 @@ function Stop-RustDesk {
     # If we only kill processes, the SCM relaunches the service within seconds and it
     # re-locks the exe, which then breaks the installer's "restart service" step.
     # Reset recovery FIRST so nothing relaunches while we work, then stop the service
-    # and WAIT until it is actually stopped (or gone).
+    # and WAIT until it is actually stopped.
     sc.exe failure RustDesk reset= 0 actions= "" | Out-Null
 
-    # Kill GUI/tray/agent processes first so they release file locks
-    Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    # Kill GUI/tray/agent processes first so they release file locks. Do NOT kill the
+    # --service process directly; the service must be stopped through the SCM so it
+    # is not left in a half-dead state. (All three processes share the same exe path,
+    # so distinguish them by command line, not path.)
+    Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -notlike "*--service*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Seconds 2
 
-    # Stop the service and wait for it to actually stop
+    # Stop the service and wait for it to actually stop. Do NOT delete it here: a
+    # stopped-but-present service is what the RustDesk installer expects to update.
+    # Deleting a stopped service can leave it in DELETE_PENDING, which makes the
+    # installer fail with "Cannot open RustDesk service on computer '.'".
     $svc = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
     if ($svc) {
         if ($svc.Status -ne 'Stopped') {
@@ -115,13 +123,26 @@ function Stop-RustDesk {
             Start-Sleep -Seconds 2
             $waited += 2
         }
-        if (Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue) {
-            Write-Status "Service still running; deleting it so the installer can replace it" "Warning"
-            sc.exe delete RustDesk *>$null
+        $s = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+        if ($s -and $s.Status -eq 'Running') {
+            # Only as a last resort: the service refuses to stop. Kill its process
+            # and delete it, then wait for the delete to fully land (SCM needs the
+            # process to exit before the pending delete clears).
+            Write-Status "Service refuses to stop; deleting it so the installer can replace it" "Warning"
+            Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
+            sc.exe delete RustDesk *>$null
+            $delWaited = 0
+            while ($delWaited -lt 30) {
+                if (-not (Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue)) { break }
+                Start-Sleep -Seconds 2
+                $delWaited += 2
+            }
         } else {
             Write-Status "RustDesk service stopped" "Success"
         }
+    } else {
+        Write-Status "RustDesk service not present" "Info"
     }
 }
 
