@@ -123,7 +123,8 @@ function Stop-RustDesk {
             Start-Sleep -Seconds 2
             $waited += 2
         }
-        if (Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue) {
+        $s = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+        if ($s -and $s.Status -ne 'Stopped') {
             Write-Status "Service did not reach Stopped state; will force-delete" "Warning"
         } else {
             Write-Status "RustDesk service stopped" "Success"

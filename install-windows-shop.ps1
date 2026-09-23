@@ -86,6 +86,11 @@ function Get-RustDeskInstaller {
     return $tempPath
 }
 
+function Set-ServiceRecovery {
+    # Restart on failure. Stop-RustDesk clears this, so re-apply after the last stop.
+    sc.exe failure RustDesk reset= 86400 actions= restart/5000/restart/10000/restart/30000 *>$null
+}
+
 function Stop-RustDesk {
     Write-Status "Stopping RustDesk service and processes..."
 
@@ -94,7 +99,9 @@ function Stop-RustDesk {
     # re-locks the exe, which then breaks the installer's "restart service" step.
     # Reset recovery FIRST so nothing relaunches while we work, then stop the service
     # and WAIT until it is actually stopped.
-    sc.exe failure RustDesk reset= 0 actions= "" | Out-Null
+    # '""' (not "") so Windows PowerShell 5.1 actually passes an empty argument;
+    # a bare "" is dropped and sc.exe rejects the command.
+    sc.exe failure RustDesk reset= 0 actions= '""' *>$null
 
     # Kill GUI/tray/agent processes first so they release file locks. Do NOT kill the
     # --service process directly; the service must be stopped through the SCM so it
@@ -150,36 +157,49 @@ function Install-RustDesk {
     param([string]$InstallerPath)
 
     Write-Status "Installing RustDesk silently..."
-    Start-Process -FilePath $InstallerPath -ArgumentList "--silent-install"
+    # Wait on the installer process itself (WaitForExit), NOT Start-Process -Wait:
+    # -Wait also waits for child processes (tray/server), which never exit.
+    $proc = Start-Process -FilePath $InstallerPath -ArgumentList "--silent-install" -PassThru
 
-    # Wait for installation to complete (don't use -Wait as it can hang)
     $rustdeskPath = "C:\Program Files\RustDesk\rustdesk.exe"
-    $maxWait = 120
-    $waited = 0
+    $maxWait = 180
 
     Write-Status "Waiting for installation to complete..."
-    while (-not (Test-Path $rustdeskPath) -and $waited -lt $maxWait) {
+    if (-not $proc.WaitForExit($maxWait * 1000)) {
+        Write-Status "Installer still running after ${maxWait}s; continuing" "Warning"
+    }
+
+    if (-not (Test-Path $rustdeskPath)) {
+        throw "RustDesk installation failed - executable not found"
+    }
+
+    # The installer registers the service TWICE: first a temporary one running
+    # "--import-config <user toml>", then it deletes that and registers the real
+    # "--service" one. Touching the service in between fails with
+    # "Cannot open RustDesk service on computer '.'" (it is DELETE_PENDING), so
+    # wait until the final --service registration is in place and settled.
+    $settled = $false
+    $waited = 0
+    while ($waited -lt 90) {
+        $svc = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq "RustDesk" }
+        if ($svc -and $svc.PathName -like "*--service*" -and $svc.State -in @('Running', 'Stopped')) {
+            $settled = $true
+            break
+        }
         Start-Sleep -Seconds 3
         $waited += 3
     }
 
-    if (-not (Test-Path $rustdeskPath)) {
-        throw "RustDesk installation failed - executable not found after ${maxWait}s"
-    }
-
-    # Give it a few more seconds to finish writing files
-    Start-Sleep -Seconds 5
-
-    # Ensure RustDesk service is set to auto-start
-    $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-    if ($service) {
-        Set-Service -Name "RustDesk" -StartupType Automatic
-        if ($service.Status -ne 'Running') {
-            Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
-        }
-        # Configure service recovery - restart on failure
-        sc.exe failure RustDesk reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+    if ($settled) {
+        # sc.exe instead of Set-Service/Start-Service: it reports failure via exit
+        # code rather than throwing, so a transient SCM hiccup can't abort the run.
+        sc.exe config RustDesk start= auto *>$null
+        sc.exe start RustDesk *>$null
+        Set-ServiceRecovery
         Write-Status "RustDesk service configured for auto-start with recovery" "Success"
+    } else {
+        Write-Status "RustDesk service did not settle after 90s; continuing" "Warning"
     }
 
     Write-Status "RustDesk installed successfully" "Success"
@@ -474,6 +494,7 @@ try {
     $service = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
     if ($service) {
         Start-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+        Set-ServiceRecovery
     }
 
     # Register with API server
