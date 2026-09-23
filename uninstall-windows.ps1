@@ -88,23 +88,65 @@ function Unregister-Device {
 }
 
 function Stop-RustDesk {
-    Write-Status "Stopping RustDesk processes..."
+    Write-Status "Stopping RustDesk processes and service..."
 
     # Remove the watchdog scheduled task FIRST so it doesn't fight us by
-    # re-installing/starting the service we're about to remove. Sleep so
-    # any already-running watchdog instance finishes before we proceed.
+    # re-installing/starting the service we're about to remove. Both an
+    # older schtasks-created task and a newer Register-ScheduledTask task
+    # live in the same Task Scheduler namespace, so delete by both names.
     # *>$null swallows all output streams -- the task may not exist (shop
     # installs never created it) and that's fine.
     schtasks.exe /Delete /TN "RustDesk Watchdog" /F *>$null
+    Unregister-ScheduledTask -TaskName "RustDesk Watchdog" -Confirm:$false -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 
-    # Stop the service
-    Stop-Service -Name "RustDesk" -Force -ErrorAction SilentlyContinue
-
-    # Kill any remaining processes (rustdesk.exe and any watchdog
-    # powershell.exe still touching RustDesk files)
+    # Kill GUI/agent processes first so they release file locks before we
+    # try to stop the service and delete files.
     Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
+
+    # Stop the service, then force-stop via sc.exe as a fallback, and wait
+    # until it is actually Stopped (or gone) before proceeding. A running
+    # service holds a lock on its exe/config that blocks file deletion and
+    # sc.exe delete, so quiescing it here is what makes the teardown stick.
+    $svc = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+    if ($svc) {
+        if ($svc.Status -ne 'Stopped') {
+            Stop-Service -Name "RustDesk" -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+        }
+        sc.exe stop RustDesk *>$null
+        $waited = 0
+        while ($waited -lt 30) {
+            $s = Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue
+            if (-not $s -or $s.Status -eq 'Stopped') { break }
+            Start-Sleep -Seconds 2
+            $waited += 2
+        }
+        if (Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue) {
+            Write-Status "Service did not reach Stopped state; will force-delete" "Warning"
+        } else {
+            Write-Status "RustDesk service stopped" "Success"
+        }
+    }
+}
+
+function Remove-RustDeskService {
+    Write-Status "Removing RustDesk service..."
+    if (-not (Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue)) {
+        Write-Status "RustDesk service not present" "Info"
+        return
+    }
+    # sc.exe delete removes the service even when Stop-Service could not
+    # fully quiesce it. Capture the result so a failure is VISIBLE instead
+    # of silently swallowed.
+    $out = sc.exe delete RustDesk 2>&1 | Out-String
+    Start-Sleep -Seconds 2
+    if (Get-Service -Name "RustDesk" -ErrorAction SilentlyContinue) {
+        Write-Status "Service still present after delete; it will clear on reboot: $($out.Trim())" "Warning"
+    } else {
+        Write-Status "RustDesk service deleted" "Success"
+    }
 }
 
 function Uninstall-RustDesk {
@@ -139,25 +181,36 @@ function Uninstall-RustDesk {
     foreach ($dir in $programDirs) {
         if (Test-Path $dir) {
             Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Status "Removed $dir" "Info"
+            if (Test-Path $dir) {
+                Write-Status "Failed to remove $dir (files still locked?)" "Warning"
+            } else {
+                Write-Status "Removed $dir" "Info"
+            }
         }
     }
 
-    # Remove config directories
+    # Remove config directories for BOTH service accounts and the user:
+    #   - %APPDATA%                        -> the interactive user (GUI)
+    #   - LocalService profile             -> customer install (service runs as LocalService)
+    #   - LocalSystem profile (systemprofile) -> SHOP install (service runs as LocalSystem)
+    # Leaving any of these behind is what lets a reinstall re-point at the
+    # public rendezvous server, so remove all three.
     $configDirs = @(
         (Join-Path $env:APPDATA "RustDesk"),
-        "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk"
+        "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk",
+        "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk"
     )
 
     foreach ($dir in $configDirs) {
         if (Test-Path $dir) {
             Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Status "Removed config: $dir" "Info"
+            if (Test-Path $dir) {
+                Write-Status "Failed to remove config: $dir" "Warning"
+            } else {
+                Write-Status "Removed config: $dir" "Info"
+            }
         }
     }
-
-    # Remove service
-    $null = sc.exe delete RustDesk 2>&1
 
     # Remove ALL shortcuts (original and branded names)
     Write-Status "Removing shortcuts..."
@@ -270,6 +323,10 @@ try {
 
     # Stop RustDesk
     Stop-RustDesk
+
+    # Delete the service while it is stopped (before file removal), so no
+    # registry entry lingers to re-launch the exe.
+    Remove-RustDeskService
 
     # Unregister from API
     Unregister-Device -DeviceId $deviceId
