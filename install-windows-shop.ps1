@@ -157,38 +157,36 @@ function Install-RustDesk {
     param([string]$InstallerPath)
 
     Write-Status "Installing RustDesk silently..."
-    # Wait on the installer process itself (WaitForExit), NOT Start-Process -Wait:
-    # -Wait also waits for child processes (tray/server), which never exit.
-    $proc = Start-Process -FilePath $InstallerPath -ArgumentList "--silent-install" -PassThru
+    # The downloaded exe is only a launcher: it exits within ~2s and hands the real
+    # install to another process, so neither -Wait nor WaitForExit tells us when
+    # the install is done. Poll for the result instead.
+    Start-Process -FilePath $InstallerPath -ArgumentList "--silent-install"
 
     $rustdeskPath = "C:\Program Files\RustDesk\rustdesk.exe"
     $maxWait = 180
 
-    Write-Status "Waiting for installation to complete..."
-    if (-not $proc.WaitForExit($maxWait * 1000)) {
-        Write-Status "Installer still running after ${maxWait}s; continuing" "Warning"
-    }
-
-    if (-not (Test-Path $rustdeskPath)) {
-        throw "RustDesk installation failed - executable not found"
-    }
-
-    # The installer registers the service TWICE: first a temporary one running
+    # The installer also registers the service TWICE: first a temporary one running
     # "--import-config <user toml>", then it deletes that and registers the real
     # "--service" one. Touching the service in between fails with
     # "Cannot open RustDesk service on computer '.'" (it is DELETE_PENDING), so
-    # wait until the final --service registration is in place and settled.
+    # wait until the exe exists AND the final --service registration has settled.
+    Write-Status "Waiting for installation to complete..."
     $settled = $false
     $waited = 0
-    while ($waited -lt 90) {
+    while ($waited -lt $maxWait) {
         $svc = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -eq "RustDesk" }
-        if ($svc -and $svc.PathName -like "*--service*" -and $svc.State -in @('Running', 'Stopped')) {
+        if ((Test-Path $rustdeskPath) -and $svc -and $svc.PathName -like "*--service*" -and
+            $svc.State -in @('Running', 'Stopped')) {
             $settled = $true
             break
         }
         Start-Sleep -Seconds 3
         $waited += 3
+    }
+
+    if (-not (Test-Path $rustdeskPath)) {
+        throw "RustDesk installation failed - executable not found after ${maxWait}s"
     }
 
     if ($settled) {
@@ -199,7 +197,7 @@ function Install-RustDesk {
         Set-ServiceRecovery
         Write-Status "RustDesk service configured for auto-start with recovery" "Success"
     } else {
-        Write-Status "RustDesk service did not settle after 90s; continuing" "Warning"
+        Write-Status "RustDesk service did not settle after ${maxWait}s; continuing" "Warning"
     }
 
     Write-Status "RustDesk installed successfully" "Success"
